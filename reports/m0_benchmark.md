@@ -10,7 +10,22 @@ Verified against live data (2026-09-27): **NOAA_1** issues 24h, UTC-midnight-ali
 
 ## GOES data-gap detection
 
-A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute XRS measurements are missing or flagged as bad in the NCEI GOES science data. This rule excluded 1 canonical 24h windows from the report period. Sensitivity analysis confirms that this exclusion does not drastically change the ranking compared to treating all windows as gap-free, but correctly prevents penalizing models for flares they correctly predicted but which GOES failed to record.
+A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) in the NCEI GOES science data. Eclipse and interpolated data do not count as gaps. The 10% threshold (144 minutes per 24h) is chosen because real telemetry drops occasionally span 5-9% of a day (e.g. 7.6% on 2026-06-15), which still leaves enough data to catch major flares. Dropping more than 10% risks missing a short-lived flare.
+
+This rule excluded 1 canonical 24h windows from the report period. Of these, 0 were true telemetry gaps >10%, and the rest were simply because the requested report window extended beyond the end of the available GOES NetCDF file.
+
+### Sensitivity: With vs. Without Gap Filtering
+
+Comparison of NOAA_1 (day-1) metrics on the canonical grid when properly excluding gap windows versus ignoring the gap flags:
+
+| Class | Metric | With Gap Filter | Without Gap Filter (Gap-Ignorant) |
+| --- | --- | --- | --- |
+| M+ | n | 178 | 179 |
+| M+ | Brier | 0.190 | 0.189 |
+| M+ | BSS | 0.049 | 0.051 |
+| X | n | 178 | 179 |
+| X | Brier | 0.030 | 0.030 |
+| X | BSS | -0.094 | -0.093 |
 
 ## Window conventions and lead time
 
