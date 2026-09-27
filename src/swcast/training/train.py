@@ -91,14 +91,17 @@ def perform_cv(df: pd.DataFrame, features: list[str], target: str, is_prob: bool
             preds = model.predict_proba(X_val_s)[:, 1]
             score = brier_score_loss(y_val.astype(int), preds)
             
-            # BSS = 1 - Brier / Brier_clim
             brier_clim = brier_score_loss(y_val.astype(int), clim_val)
             bss = 1.0 - (score / brier_clim) if brier_clim > 0 else np.nan
             
             fold_metrics.append({
                 "val_year": val_year,
                 "score": score,
-                "bss_clim": bss
+                "bss_clim": bss,
+                "preds": preds,
+                "targets": y_val,
+                "dates": df_val['target_date'].values,
+                "clim_val": clim_val
             })
         else:
             model = Ridge(alpha=best_param, solver='svd', random_state=42)
@@ -107,7 +110,10 @@ def perform_cv(df: pd.DataFrame, features: list[str], target: str, is_prob: bool
             score = np.sqrt(mean_squared_error(y_val, preds))
             fold_metrics.append({
                 "val_year": val_year,
-                "score": score
+                "score": score,
+                "preds": preds,
+                "targets": y_val,
+                "dates": df_val['target_date'].values
             })
             
     return best_param, fold_metrics
