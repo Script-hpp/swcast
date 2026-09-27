@@ -69,3 +69,43 @@ Active                40/30/20
 """
     with pytest.raises(ValueError, match="Could not find required probability fields"):
         parse_rsga(text)
+
+
+from swcast.fetch.swpc import is_valid_live_product, is_valid_historical_product
+from datetime import datetime, date, timezone
+
+def test_is_valid_live_product():
+    # Live product issued on 2026-09-26 22:00, run date is 2026-09-26 (valid)
+    df_valid = pd.DataFrame({"issue_time": [datetime(2026, 9, 26, 22, 0, tzinfo=timezone.utc)]})
+    assert is_valid_live_product(df_valid, date(2026, 9, 26)) == True
+
+    # Live product delayed: issued on 2026-09-27 01:00 for run date 2026-09-26 (invalid)
+    df_delayed = pd.DataFrame({"issue_time": [datetime(2026, 9, 27, 1, 0, tzinfo=timezone.utc)]})
+    assert is_valid_live_product(df_delayed, date(2026, 9, 26)) == False
+
+def test_is_valid_historical_product():
+    # Valid: Issued Sep 14 22:00, targets Sep 15..17, file_date Sep 14
+    df_valid = pd.DataFrame({
+        "issue_time": [datetime(2010, 9, 14, 22, 0, tzinfo=timezone.utc)],
+        "target_date": [date(2010, 9, 15)]
+    })
+    valid, reason = is_valid_historical_product(df_valid, date(2010, 9, 14))
+    assert valid == True
+
+    # Invalid time: Issued Sep 15 02:10, targets Sep 15..17, file_date Sep 14
+    df_late = pd.DataFrame({
+        "issue_time": [datetime(2010, 9, 15, 2, 10, tzinfo=timezone.utc)],
+        "target_date": [date(2010, 9, 15)]
+    })
+    valid, reason = is_valid_historical_product(df_late, date(2010, 9, 14))
+    assert valid == False
+    assert reason == "time"
+
+    # Invalid dates: Issued Sep 13 22:00, targets Sep 14..16, file_date Sep 14
+    df_wrong_target = pd.DataFrame({
+        "issue_time": [datetime(2010, 9, 13, 22, 0, tzinfo=timezone.utc)],
+        "target_date": [date(2010, 9, 14)] # should be file_date + 1 (Sep 15)
+    })
+    valid, reason = is_valid_historical_product(df_wrong_target, date(2010, 9, 14))
+    assert valid == False
+    assert reason == "dates"

@@ -215,6 +215,40 @@ def archive_live_products() -> dict[str, Path]:
     return saved_paths
 
 
+def is_valid_live_product(df: pd.DataFrame, run_date: datetime.date) -> bool:
+    """
+    Check if the live SWPC product is valid for the given run date.
+    It is valid if its issue_date matches the run_date.
+    """
+    if df.empty:
+        return False
+    issue_date = df["issue_time"].iloc[0].date()
+    return issue_date == run_date
+
+
+def is_valid_historical_product(df: pd.DataFrame, file_date: datetime.date) -> tuple[bool, str]:
+    """
+    Checks historical RSGA product validity.
+    Returns (is_valid, reason).
+    """
+    if df.empty:
+        return False, "empty"
+        
+    issue_time = df["issue_time"].iloc[0]
+    target_date_1 = df["target_date"].iloc[0]
+    
+    # Rule 1: issue_time < 00:00 UTC of target_date_1
+    if issue_time >= pd.Timestamp(target_date_1, tz=timezone.utc):
+        return False, "time"
+        
+    # Rule 2: target dates exactly file_date + 1..+3
+    expected_target_1 = file_date + timedelta(days=1)
+    if target_date_1 != expected_target_1:
+        return False, "dates"
+        
+    return True, ""
+
+
 def fetch_historical_rsga(start_year: int = 2010, end_year: int = 2025) -> pd.DataFrame:
     """
     Fetch and parse historical RSGA products from SWPC FTP warehouse.
@@ -261,18 +295,12 @@ def fetch_historical_rsga(start_year: int = 2010, end_year: int = 2025) -> pd.Da
                         parse_errors += 1
                         continue
                         
-                    issue_time = df["issue_time"].iloc[0]
-                    target_date_1 = df["target_date"].iloc[0]
-                    
-                    # Rule 1: issue_time < 00:00 UTC of target_date_1
-                    if issue_time >= pd.Timestamp(target_date_1, tz=timezone.utc):
-                        excluded_time += 1
-                        continue
-                        
-                    # Rule 2: target dates exactly issue_date + 1..+3
-                    expected_target_1 = file_date + timedelta(days=1)
-                    if target_date_1 != expected_target_1:
-                        excluded_dates += 1
+                    valid, reason = is_valid_historical_product(df, file_date)
+                    if not valid:
+                        if reason == "time":
+                            excluded_time += 1
+                        elif reason == "dates":
+                            excluded_dates += 1
                         continue
                         
                     all_dfs.append(df)
