@@ -38,9 +38,8 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
     
     Quality Handling:
     - Only records from the currently active spacecraft ('active' == True) are used.
-    - Quality fields ('overall_quality', 'max_data_flag') are preserved in the output for transparency, 
-      but no strict thresholding is applied here because invalid measurements are already returned 
-      as 'null' in the JSON by SWPC, which naturally excludes them during feature extraction.
+    - Only records with 'overall_quality' == 0 are preserved, to ensure bad values are filtered explicitly.
+    - Quality fields ('overall_quality', 'max_data_flag') are preserved in the output for transparency.
     - The source spacecraft ('source') is stored per minute.
     """
     mag_url = f"{SWPC_JSON_BASE}/rtsw_mag_1m.json"
@@ -60,9 +59,9 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
     if df_mag.empty or df_wind.empty:
         return pd.DataFrame(columns=["time", "bx", "by_gsm", "bz_gsm", "speed", "density", "source", "overall_quality", "max_data_flag"])
         
-    # Filter for active spacecraft only
-    df_mag = df_mag[df_mag["active"] == True].copy()
-    df_wind = df_wind[df_wind["active"] == True].copy()
+    # Filter for active spacecraft and good quality only
+    df_mag = df_mag[(df_mag["active"] == True) & (df_mag["overall_quality"] == 0)].copy()
+    df_wind = df_wind[(df_wind["active"] == True) & (df_wind["overall_quality"] == 0)].copy()
     
     df_mag["time"] = pd.to_datetime(df_mag["time_tag"], utc=True)
     df_wind["time"] = pd.to_datetime(df_wind["time_tag"], utc=True)

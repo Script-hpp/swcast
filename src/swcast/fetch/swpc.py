@@ -87,13 +87,6 @@ def parse_rsga(text: str) -> pd.DataFrame:
     if not target_dates:
         raise ValueError("Could not find prediction dates in section VI header")
 
-    # For 22:00 UTC product, day 1 is tomorrow. For earlier, it might be today.
-    # The requirement strictly applies to 22:00 UTC products.
-    if issue_time.hour >= 20:
-        base_date = issue_time.floor("D")
-        for i in range(3):
-            expected_date = (base_date + pd.Timedelta(days=i+1)).date()
-            assert target_dates[i] == expected_date, f"Target date mismatch: {target_dates[i]} != {expected_date}"
 
     res = []
     for i in range(3):
@@ -225,6 +218,7 @@ def archive_live_products() -> dict[str, Path]:
 def fetch_historical_rsga(start_year: int = 2010, end_year: int = 2025) -> pd.DataFrame:
     """
     Fetch and parse historical RSGA products from SWPC FTP warehouse.
+    Uses product if issue_time < 00:00 UTC of first target date, and target dates match issue_date +1..+3.
     """
     cache_dir = _get_cache_dir()
     all_dfs = []
@@ -244,24 +238,49 @@ def fetch_historical_rsga(start_year: int = 2010, end_year: int = 2025) -> pd.Da
                 
         valid_count = 0
         parse_errors = 0
+        excluded_time = 0
+        excluded_dates = 0
         
         with tarfile.open(cache_path, "r:gz") as tar:
             members = [m for m in tar.getmembers() if m.name.endswith("RSGA.txt")]
             for member in members:
+                # Extract filename date: e.g., 20100609RSGA.txt
+                m_name = member.name.split("/")[-1]
+                m_date_str = m_name[:8]
+                try:
+                    file_date = pd.to_datetime(m_date_str, format="%Y%m%d").date()
+                except Exception:
+                    continue
+                    
                 f = tar.extractfile(member)
                 if f:
                     text = f.read().decode("utf-8", errors="replace")
                     try:
                         df = parse_rsga(text)
-                        if df["issue_time"].iloc[0].hour == 22:
-                            all_dfs.append(df)
-                            valid_count += 1
                     except Exception as e:
                         parse_errors += 1
+                        continue
+                        
+                    issue_time = df["issue_time"].iloc[0]
+                    target_date_1 = df["target_date"].iloc[0]
+                    
+                    # Rule 1: issue_time < 00:00 UTC of target_date_1
+                    if issue_time >= pd.Timestamp(target_date_1, tz=timezone.utc):
+                        excluded_time += 1
+                        continue
+                        
+                    # Rule 2: target dates exactly issue_date + 1..+3
+                    expected_target_1 = file_date + timedelta(days=1)
+                    if target_date_1 != expected_target_1:
+                        excluded_dates += 1
+                        continue
+                        
+                    all_dfs.append(df)
+                    valid_count += 1
                         
         expected = 365 if year % 4 != 0 else 366
         missing = expected - valid_count
-        logger.info(f"Year {year}: Parsed {valid_count} 22:00 UTC products. Missing days: {missing}. Parse errors: {parse_errors}")
+        logger.info(f"Year {year}: Used {valid_count}. Excluded(time): {excluded_time}. Excluded(dates): {excluded_dates}. Parse errors: {parse_errors}. Missing: {missing}")
                             
     if not all_dfs:
         return pd.DataFrame()
