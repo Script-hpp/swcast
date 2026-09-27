@@ -14,7 +14,7 @@ uv venv -p 3.12 .venv
 source .venv/bin/activate
 
 # Abhängigkeiten installieren (siehe environment.yml)
-uv pip install pandas==2.2.* numpy==1.26.* scipy==1.13.* pyarrow==16.* requests==2.32.* pyyaml==6.0.* matplotlib==3.9.* pytest==8.* xarray==2024.* netcdf4==1.6.* opentimestamps-client==0.7.1
+uv pip install pandas==2.2.* numpy==1.26.* scipy==1.13.* scikit-learn==1.5.* pyarrow==16.* requests==2.32.* pyyaml==6.0.* matplotlib==3.9.* pytest==8.* xarray==2024.* netcdf4==1.6.* opentimestamps-client==0.7.1
 ```
 
 Konfiguration in `config.yaml` (Datenpfad, Zeiträume, Lauf-Uhrzeit).
