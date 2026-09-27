@@ -76,3 +76,10 @@ def test_compute_2h_features_fallback():
     
     with pytest.raises(FallbackError, match="Only 59/120 valid minutes"):
         compute_2h_features(df, run_start)
+
+
+def test_compute_2h_features_rejects_naive_run_start():
+    df = pd.DataFrame(columns=["time", "by_gsm", "bz_gsm", "speed", "density"])
+    naive = datetime(2026, 1, 1, 2, 0)  # no tzinfo
+    with pytest.raises(ValueError, match="timezone-aware"):
+        compute_2h_features(df, naive)

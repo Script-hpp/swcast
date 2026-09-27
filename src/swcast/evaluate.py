@@ -221,10 +221,16 @@ def build_evaluation_rows(
     artifacts: dict,
 ) -> list[dict]:
     """
-    One row per (target_date, k) for every run-day D in `run_days` (the
-    union of all days that had at least one forecast/MISSED attempt).
-    `selected` need not have an entry for every D in `run_days` (a day can
-    have only sub-22:00 UTC attempts, i.e. none qualify at all).
+    One row per (target_date, k) for every run-day D in `run_days`.
+    `run_days` should be the FULL calendar-day universe (see
+    `build_run_day_universe`), not just days that happen to have a file —
+    a day the daily run never even attempted (GitHub Actions down, no
+    forecast, no MISSED file) must still show up here as missed, or an
+    outage would silently disappear from the evaluation instead of
+    counting against it (PREREGISTRATION §6).
+    `selected` need not have an entry for every D in `run_days`: that's
+    either because there's truly no file for that day, or because the
+    only attempt(s) were before 22:00 UTC and don't qualify.
     """
     rows = []
     swpc_cache: dict[date, pd.DataFrame | None] = {}
@@ -262,6 +268,13 @@ def build_evaluation_rows(
                 swpc_missing = True
 
             reasons = []
+            if entry is None:
+                # No forecast/MISSED file at all for this run-day (e.g. the
+                # cron didn't run) — a purely descriptive label, distinct
+                # from "swpc_fehlt"/"gfz_luecke": it does NOT exclude the
+                # day from the paired ΔBSS (§5 still substitutes climatology
+                # and scores it), it only records *why* it was missed.
+                reasons.append("kein_lauf")
             if swpc_missing:
                 reasons.append("swpc_fehlt")
             if label_gap:
@@ -311,14 +324,17 @@ def compute_k_stats(rows_k: list[dict]) -> dict:
     """
     BSS(swcast), BSS(SWPC) and delta-BSS with a 95% block-bootstrap CI
     (PREREGISTRATION §4/§5), computed on the paired subset only (label
-    present AND SWPC present) — missed swcast days stay IN this subset
-    with p_swcast already substituted by climatology (§5).
+    present AND SWPC present) — missed swcast days (whether "kein_lauf",
+    too late, or any other reason) stay IN this subset with p_swcast
+    already substituted by climatology (§5); "kein_lauf" is a descriptive
+    label in Ausschlussgrund, not a real exclusion from the paired set.
     """
     df = pd.DataFrame(rows_k)
     n_label_gap = int(df["Ausschlussgrund"].str.contains("gfz_luecke").sum())
     n_swpc_missing = int(df["Ausschlussgrund"].str.contains("swpc_fehlt").sum())
 
-    paired = df[df["Ausschlussgrund"] == ""].copy()
+    excluded = df["Ausschlussgrund"].str.contains("gfz_luecke") | df["Ausschlussgrund"].str.contains("swpc_fehlt")
+    paired = df[~excluded].copy()
     if paired.empty:
         return {
             "n": 0, "n_label_gap": n_label_gap, "n_swpc_missing": n_swpc_missing,
@@ -352,20 +368,51 @@ def compute_k_stats(rows_k: list[dict]) -> dict:
     }
 
 
-def days_since_start(forecasts_dir: Path) -> int | None:
-    start_path = forecasts_dir / "START.md"
+def _read_start_date(start_path: Path) -> date | None:
     if not start_path.exists():
         return None
-    text = start_path.read_text()
-    for line in text.splitlines():
+    for line in start_path.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             try:
-                start_date = date.fromisoformat(line.split()[0])
+                return date.fromisoformat(line.split()[0])
             except ValueError:
                 continue
-            return (datetime.now(timezone.utc).date() - start_date).days
     return None
+
+
+def days_since_start(forecasts_dir: Path) -> int | None:
+    start_date = _read_start_date(forecasts_dir / "START.md")
+    if start_date is None:
+        return None
+    return (datetime.now(timezone.utc).date() - start_date).days
+
+
+def build_run_day_universe(forecasts_dir: Path, file_run_days: set[date], today: date | None = None) -> set[date]:
+    """
+    The full run-day universe to evaluate: every calendar day from the
+    daily run's start (forecasts/START.md's target_date - 1) through
+    yesterday (UTC), inclusive, regardless of whether a file exists for
+    it — a day the cron silently skipped must still show up as missed
+    (§6), or the outage would just vanish from the evaluation instead of
+    counting against it.
+
+    Before there is a START.md (the run has never produced a valid
+    forecast yet), there's no fixed day to start counting from, so only
+    days that actually have a file are considered.
+    """
+    start_target_date = _read_start_date(forecasts_dir / "START.md")
+    if start_target_date is None:
+        return set(file_run_days)
+
+    run_day_start = start_target_date - timedelta(days=1)
+    yesterday = (today or datetime.now(timezone.utc).date()) - timedelta(days=1)
+    if run_day_start > yesterday:
+        return set(file_run_days)
+
+    n_days = (yesterday - run_day_start).days + 1
+    all_days = {run_day_start + timedelta(days=i) for i in range(n_days)}
+    return all_days | file_run_days
 
 
 def maybe_write_start_md(rows: list[dict], forecasts_dir: Path) -> Path | None:
@@ -465,7 +512,7 @@ def main(nowcast_lookback_days: int = 400) -> Path:
     daypre_paths = sorted(archive_dir.glob("*_3-day-solar-geomag-predictions.txt"))
 
     selected = select_swcast_forecasts(forecast_paths)
-    run_days: set[date] = set(selected)
+    file_run_days: set[date] = set(selected)
     for p in forecast_paths:
         try:
             payload = json.loads(p.read_text())
@@ -473,7 +520,9 @@ def main(nowcast_lookback_days: int = 400) -> Path:
             continue
         rs = _parse_run_start(payload)
         if rs is not None:
-            run_days.add(rs.date())
+            file_run_days.add(rs.date())
+
+    run_days = build_run_day_universe(forecasts_dir, file_run_days)
 
     if not run_days:
         logger.warning("No forecast/MISSED files found under %s; nothing to evaluate.", forecasts_dir)

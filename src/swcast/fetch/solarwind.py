@@ -185,6 +185,10 @@ def compute_2h_features(df: pd.DataFrame, run_start: datetime) -> dict:
     Rule: if less than 60 of 120 minutes are valid -> FallbackError.
     A minute is valid if it has all required data (bz, by, speed, density).
     """
+    run_start = pd.Timestamp(run_start)
+    if run_start.tzinfo is None:
+        raise ValueError("compute_2h_features: run_start must be timezone-aware (UTC)")
+
     window_start = run_start - timedelta(hours=2)
     window_end = run_start - timedelta(seconds=1)
     

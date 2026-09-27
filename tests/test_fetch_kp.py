@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+from unittest.mock import patch
 import pandas as pd
 import numpy as np
 import math
+import pytest
 
 from swcast.fetch.kp import daily_storm_label, get_kp_dataframe
 
@@ -60,3 +62,29 @@ def test_get_persistence_intervals():
     run_time = datetime(2026, 9, 28, 0, 0, tzinfo=timezone.utc)
     intervals = get_persistence_intervals(run_time)
     assert intervals[-1] == datetime(2026, 9, 27, 21, 0, tzinfo=timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# get_kp_dataframe with a plain datetime.datetime (not pd.Timestamp): this
+# is exactly what forecast.main passes via datetime.now(timezone.utc), and
+# used to crash with "datetime.datetime object has no attribute 'floor'"
+# because start/end were used as pd.Timestamp without being converted.
+# ---------------------------------------------------------------------------
+
+@patch("swcast.fetch.kp.fetch_kp_raw")
+def test_get_kp_dataframe_accepts_plain_datetime(mock_fetch_raw):
+    mock_fetch_raw.return_value = {"datetime": [], "Kp": []}
+
+    start = datetime(2026, 9, 26, 22, 30, tzinfo=timezone.utc)  # plain datetime.datetime
+    end = datetime(2026, 9, 27, 22, 30, tzinfo=timezone.utc)
+
+    df = get_kp_dataframe(start, end, status="now")  # must not raise
+
+    assert not df.empty
+    assert df["time"].iloc[0] == pd.Timestamp(start).floor("3h")
+
+
+def test_get_kp_dataframe_rejects_naive_datetime():
+    naive = datetime(2026, 9, 26, 22, 30)  # no tzinfo
+    with pytest.raises(ValueError, match="timezone-aware"):
+        get_kp_dataframe(naive, naive)

@@ -73,6 +73,10 @@ def build_live_features(run_start: datetime) -> dict:
     minutes) is treated the same: l1_valid is False, all l1_* values are NaN
     for every day, and l1_fallback_reason records why.
     """
+    run_start = pd.Timestamp(run_start)
+    if run_start.tzinfo is None:
+        raise ValueError("build_live_features: run_start must be timezone-aware (UTC)")
+
     current_date = run_start.date()
 
     # --- GFZ nowcast: persistence, recurrence, climatology ---------------

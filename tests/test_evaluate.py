@@ -13,6 +13,7 @@ import pytest
 
 from swcast.evaluate import (
     build_evaluation_rows,
+    build_run_day_universe,
     climatology_rate,
     compute_k_stats,
     maybe_write_start_md,
@@ -300,3 +301,97 @@ def test_maybe_write_start_md_returns_none_without_any_valid_k1_row(tmp_path):
     rows = [{"Datum": "2026-03-01", "k": 1, "verpasst": True}]
     assert maybe_write_start_md(rows, tmp_path) is None
     assert not (tmp_path / "START.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# A completely silent run-day (no forecast, no MISSED file at all — e.g. the
+# cron didn't run) must still show up as missed with climatology, not vanish.
+# ---------------------------------------------------------------------------
+
+def test_no_attempt_at_all_gets_kein_lauf_reason_but_stays_paired():
+    run_day = date(2026, 3, 1)
+    daily_dict = {run_day + timedelta(days=k): {"storm_label": False} for k in (1, 2, 3)}
+    for i in range(1, 366):
+        daily_dict.setdefault(run_day - timedelta(days=i), {"storm_label": False})
+
+    rows = build_evaluation_rows({}, {run_day}, [], daily_dict, _artifacts())
+    row = rows[0]
+
+    assert row["verpasst"] is True
+    assert "kein_lauf" in row["Ausschlussgrund"].split(",")
+    # kein_lauf alone (SWPC missing here too in this fixture, since no daypre
+    # was provided) — check the reason-tagging logic in isolation instead:
+    # a kein_lauf-only row (SWPC present, label present) must NOT be treated
+    # as excluded by compute_k_stats.
+    stats = compute_k_stats([{**row, "Ausschlussgrund": "kein_lauf", "p_swpc": 0.1}])
+    assert stats["n"] == 1
+
+
+def test_build_run_day_universe_fills_gap_between_run_days_after_start(tmp_path):
+    forecasts_dir = tmp_path / "forecasts"
+    forecasts_dir.mkdir()
+    # Start = target_date 2026-03-02 -> run_day_start = 2026-03-01
+    (forecasts_dir / "START.md").write_text("2026-03-02\n\nnote\n")
+
+    file_run_days = {date(2026, 3, 1), date(2026, 3, 3)}  # 2026-03-02 is silently missing
+    universe = build_run_day_universe(forecasts_dir, file_run_days, today=date(2026, 3, 5))
+
+    assert date(2026, 3, 2) in universe
+    assert universe == {date(2026, 3, 1), date(2026, 3, 2), date(2026, 3, 3), date(2026, 3, 4)}
+
+
+def test_build_run_day_universe_without_start_md_uses_only_file_days(tmp_path):
+    file_run_days = {date(2026, 3, 1), date(2026, 3, 5)}
+    universe = build_run_day_universe(tmp_path, file_run_days, today=date(2026, 3, 10))
+    assert universe == file_run_days
+
+
+def test_compute_k_stats_kein_lauf_alone_does_not_exclude_from_paired_set():
+    rows = [
+        {"Datum": "2026-03-02", "k": 1, "p_swcast": 0.15, "verpasst": True, "model_variant": None,
+         "p_swpc": 0.2, "Label": 0.0, "Klimatologie": 0.15, "Ausschlussgrund": "kein_lauf"},
+    ]
+    stats = compute_k_stats(rows)
+    assert stats["n"] == 1
+
+
+def test_end_to_end_gap_day_between_two_run_days_shows_up_as_missed(tmp_path):
+    """
+    forecasts/START.md says the run started on run-day 2026-03-01. Runs
+    exist (files on disk) for 2026-03-01 and 2026-03-03, but 2026-03-02 has
+    NO file at all (the cron silently didn't run). It must still appear in
+    the evaluation as a missed day with climatology substituted, not vanish.
+    """
+    forecasts_dir = tmp_path / "forecasts"
+    forecasts_dir.mkdir()
+    (forecasts_dir / "START.md").write_text("2026-03-02\n")  # target_date +1 of 2026-03-01's run
+
+    day1 = date(2026, 3, 1)
+    day3 = date(2026, 3, 3)
+    path1 = _write_forecast(forecasts_dir / "2026-03-02", datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc))
+    path3 = _write_forecast(forecasts_dir / "2026-03-04", datetime(2026, 3, 3, 22, 0, tzinfo=timezone.utc))
+
+    def fake_issue_time(path):
+        return datetime.fromisoformat(json.loads(path.read_text())["run_start"].replace("Z", "+00:00")) + timedelta(minutes=5)
+
+    forecast_paths = [path1, path3]
+    selected = select_swcast_forecasts(forecast_paths, issue_time_fn=fake_issue_time)
+    file_run_days = {day1, day3}
+    run_days = build_run_day_universe(forecasts_dir, file_run_days, today=date(2026, 3, 5))
+
+    assert date(2026, 3, 2) in run_days  # the gap day is in the universe
+
+    daily_dict = {}
+    for d in (day1, day3, date(2026, 3, 2)):
+        for k in (1, 2, 3):
+            daily_dict[d + timedelta(days=k)] = {"storm_label": False}
+    for i in range(1, 366):
+        daily_dict.setdefault(day1 - timedelta(days=i), {"storm_label": False})
+
+    rows = build_evaluation_rows(selected, run_days, [], daily_dict, _artifacts())
+    gap_rows = [r for r in rows if r["Datum"] == (date(2026, 3, 2) + timedelta(days=1)).isoformat() and r["k"] == 1]
+
+    assert len(gap_rows) == 1
+    assert gap_rows[0]["verpasst"] is True
+    assert "kein_lauf" in gap_rows[0]["Ausschlussgrund"].split(",")
+    assert gap_rows[0]["p_swcast"] == pytest.approx(gap_rows[0]["Klimatologie"])

@@ -63,7 +63,19 @@ def fetch_kp_raw(start: datetime, end: datetime, status: str = "def", use_cache:
     return data
 
 def get_kp_dataframe(start: datetime, end: datetime, status: str = "def", use_cache: bool = True) -> pd.DataFrame:
-    """Get Kp data as a pandas DataFrame on a complete 3-hourly grid."""
+    """Get Kp data as a pandas DataFrame on a complete 3-hourly grid.
+
+    `start`/`end` are normalized to tz-aware pandas Timestamps (a plain
+    `datetime.datetime` has no `.floor()`, which crashed every live run:
+    forecast.main passes `datetime.now(timezone.utc)` straight through to
+    here via fetch_nowcast). A naive datetime is rejected outright rather
+    than silently assumed to be UTC.
+    """
+    start = pd.Timestamp(start)
+    end = pd.Timestamp(end)
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("get_kp_dataframe: start and end must be timezone-aware (UTC)")
+
     data = fetch_kp_raw(start, end, status=status, use_cache=use_cache)
     
     if not data.get("datetime"):

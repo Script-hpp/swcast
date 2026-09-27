@@ -30,6 +30,12 @@ python -m swcast.forecast --freeze-models is a one-off command that freezes
 models/<model>/model_artifacts.json (TSA + OTS). It must be run once before
 the first live prediction. main() refuses to run (RuntimeError) if that
 artifacts file has no matching, unmodified .sha256 sidecar.
+
+python -m swcast.forecast --dry-run runs the full pipeline (real GFZ/SWPC
+network calls) but writes and freezes nothing, printing features + the
+prediction to stdout. Required to pass before the live start, and meant to
+also run as a CI check step (it needs no frozen artifacts and leaves no
+trace on disk).
 """
 
 from __future__ import annotations
@@ -42,10 +48,12 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
+
 from swcast.config import load_config
 from swcast.fetch.swpc import LIVE_PRODUCTS, archive_live_products
 from swcast.freeze import freeze_file
-from swcast.live_features import build_live_features, predict
+from swcast.live_features import MissingFeatureError, build_live_features, predict
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +155,9 @@ def main(run_start: datetime | None = None) -> Path | None:
 
     if run_start is None:
         run_start = datetime.now(timezone.utc)
+    run_start = pd.Timestamp(run_start)
+    if run_start.tzinfo is None:
+        raise ValueError("forecast.main: run_start must be timezone-aware (UTC)")
 
     run_stamp = run_start.strftime("%Y%m%dT%H%M%SZ")
     day1_date = run_start.date() + timedelta(days=1)
@@ -230,11 +241,74 @@ def main(run_start: datetime | None = None) -> Path | None:
     return result_path
 
 
+def dry_run(run_start: datetime | None = None) -> int:
+    """
+    Run the full live pipeline with REAL network calls (GFZ nowcast, SWPC
+    rtsw, SWPC daypre/probabilities/Kp-forecast) but write and freeze
+    NOTHING: no forecasts/, no archive/, no .sha256/.tsr/.ots anywhere.
+    Prints the built features and the prediction to stdout.
+
+    Does not require --freeze-models to have run first (unlike main()):
+    the whole point is to sanity-check the pipeline against live data
+    before that one-off freeze, and before the first real live run.
+    Required before the live start, and meant to run as a CI check step.
+    """
+    cfg = load_config()
+    model_name = _model_name(cfg)
+    artifacts = _load_artifacts(_artifacts_path(model_name))
+
+    if run_start is None:
+        run_start = datetime.now(timezone.utc)
+    run_start = pd.Timestamp(run_start)
+    if run_start.tzinfo is None:
+        raise ValueError("forecast.dry_run: run_start must be timezone-aware (UTC)")
+
+    print("Dry run: nothing is written or frozen.")
+    print(f"model: {model_name}")
+    print(f"run_start: {_iso_z(run_start)}")
+
+    try:
+        features = build_live_features(run_start)
+    except Exception as exc:
+        print(f"build_live_features FAILED: {type(exc).__name__}: {exc}")
+        return 1
+
+    print(f"l1_valid: {features['l1_valid']}")
+    print(f"l1_fallback_reason: {features.get('l1_fallback_reason')}")
+    print(f"inputs_last_data_time: {_iso_z(features['inputs_last_data_time'])}")
+    for k in (1, 2, 3):
+        day = features["days"][k]
+        print(
+            f"  day+{k} ({day['target_date']}): persistence={day['persistence']:.4f} "
+            f"recurrence={day['recurrence']:.4f} climatology={day['climatology']:.4f} "
+            f"l1_bz_gsm={day['l1_bz_gsm']!r} l1_by_gsm={day['l1_by_gsm']!r} "
+            f"l1_speed={day['l1_speed']!r} l1_dyn_pressure={day['l1_dyn_pressure']!r} "
+            f"l1_newell={day['l1_newell']!r}"
+        )
+
+    try:
+        predictions = predict(features, artifacts)
+    except MissingFeatureError as exc:
+        print(f"predict() would MISS this run: {exc}")
+        return 1
+
+    print(f"model_variant: {'main' if features['l1_valid'] else 'fallback'}")
+    for k in (1, 2, 3):
+        print(f"  day+{k}: p_storm={predictions[k]['p_storm']:.4f} kp_max={predictions[k]['kp_max']:.4f}")
+
+    return 0
+
+
 def _cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="swcast daily Kp forecast run")
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--freeze-models", action="store_true",
         help="One-off: freeze models/<model>/model_artifacts.json (TSA+OTS) before the first live run",
+    )
+    group.add_argument(
+        "--dry-run", action="store_true",
+        help="Run the full pipeline with real network calls but write/freeze nothing; prints features+prediction",
     )
     args = parser.parse_args(argv)
 
@@ -243,6 +317,9 @@ def _cli(argv: list[str] | None = None) -> int:
     if args.freeze_models:
         freeze_models()
         return 0
+
+    if args.dry_run:
+        return dry_run()
 
     try:
         main()

@@ -356,3 +356,24 @@ def test_build_live_features_l1_valid_has_no_fallback_reason(mock_nowcast, mock_
 
     assert live["l1_valid"] is True
     assert live["l1_fallback_reason"] is None
+
+
+def test_build_live_features_accepts_plain_datetime_and_rejects_naive():
+    """
+    forecast.main passes datetime.now(timezone.utc) — a plain
+    datetime.datetime, not pd.Timestamp — straight through. This used to
+    crash deep inside get_kp_dataframe (no .floor() on datetime.datetime).
+    """
+    with patch("swcast.live_features.fetch_nowcast") as mock_nowcast, \
+         patch("swcast.live_features.fetch_swpc_live") as mock_swpc, \
+         patch("swcast.live_features.compute_2h_features") as mock_compute2h:
+        mock_nowcast.return_value = _make_shared_kp_df()
+        mock_swpc.return_value = pd.DataFrame(columns=["time", "by_gsm", "bz_gsm", "speed", "density"])
+        mock_compute2h.side_effect = FallbackError("no L1")
+
+        plain_dt = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)  # not pd.Timestamp
+        live = build_live_features(plain_dt)  # must not raise
+        assert live["l1_valid"] is False
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_live_features(datetime(2010, 1, 1, 22, 30))  # naive

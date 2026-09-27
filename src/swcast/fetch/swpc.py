@@ -1,7 +1,9 @@
 import logging
 import json
 import re
+import shutil
 import tarfile
+import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -14,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 SWPC_JSON_BASE = "https://services.swpc.noaa.gov/json"
 SWPC_TEXT_BASE = "https://services.swpc.noaa.gov/text"
-SWPC_FTP_BASE = "https://ftp.swpc.noaa.gov/pub/warehouse"  # https mirror of the FTP warehouse; requests can't fetch ftp://
+# https://ftp.swpc.noaa.gov does not answer (verified with curl -I, times out);
+# requests can't do ftp:// either, so this uses urllib.request.urlopen with an
+# explicit timeout instead (see fetch_historical_rsga).
+SWPC_FTP_BASE = "ftp://ftp.swpc.noaa.gov/pub/warehouse"
 
 
 def _get_archive_dir() -> Path:
@@ -276,11 +281,8 @@ def fetch_historical_rsga(start_year: int = 2010, end_year: int = 2025) -> pd.Da
             url = f"{SWPC_FTP_BASE}/{year}/{tar_filename}"
             logger.info(f"Downloading historical RSGA for {year} from {url}")
             try:
-                with requests.get(url, stream=True, timeout=30) as r:
-                    r.raise_for_status()
-                    with open(cache_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            f.write(chunk)
+                with urllib.request.urlopen(url, timeout=60) as resp, open(cache_path, "wb") as f:
+                    shutil.copyfileobj(resp, f)
             except Exception as e:
                 cache_path.unlink(missing_ok=True)
                 logger.error(f"Failed to download {url}: {e}")
