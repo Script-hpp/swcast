@@ -33,7 +33,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from swcast.net import get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,9 @@ DIGICERT_URL = "http://timestamp.digicert.com"
 
 def _http_post(url: str, data: bytes, content_type: str, timeout: int = 30) -> bytes:
     """POST binary data to a TSA URL and return the raw response body."""
-    resp = requests.post(
+    resp = get_with_retry(
         url,
+        method="POST",
         data=data,
         headers={"Content-Type": content_type},
         timeout=timeout,

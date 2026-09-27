@@ -4,14 +4,23 @@ name: daily-forecast
 # late; a delay of up to ~90 minutes still leaves comfortable room before
 # 00:00 UTC of the target day, and the RFC-3161 TSA deadline (§6) is what
 # actually decides "verpasst" either way, not this schedule.
+#
+# A second cron at 23:15 UTC is a retry in case the 22:30 attempt failed
+# (e.g. a transient network blip to an upstream API): a MISSED file does
+# not consume the day (evaluate.select_swcast_forecasts), so a successful
+# 23:15 run still counts. The "check if already done" step below skips the
+# whole run if the 22:30 attempt already succeeded, so this never produces
+# a second (ignored) successful forecast for the same day.
 on:
   schedule:
     - cron: "30 22 * * *"
+    - cron: "15 23 * * *"
   workflow_dispatch: {}
 
-# Never let two runs race each other (e.g. a manual dispatch overlapping the
-# cron): PREREGISTRATION §6's "only the earliest attempt of the day counts"
-# rule assumes runs don't interleave.
+# Never let two runs race each other (e.g. the two crons overlapping, or a
+# manual dispatch overlapping either): PREREGISTRATION §6's "only the
+# earliest successful attempt of the day counts" rule assumes runs don't
+# interleave.
 concurrency:
   group: daily-forecast
   cancel-in-progress: false
@@ -31,16 +40,53 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Pull latest changes
+        run: git pull --ff-only origin master
+
+      # If the 22:30 attempt already produced a successful forecast today
+      # (run_start >= 22:00 UTC, payload has "targets"), the 23:15 retry (or
+      # a manual re-dispatch) must not do anything: forecast/evaluate/OTS/
+      # commit are all skipped and the job ends green immediately.
+      - name: Check if today's forecast already exists
+        id: check
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import datetime
+          import glob
+          import json
+
+          today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+          found = False
+          for path in glob.glob("forecasts/*/*.json"):
+              try:
+                  with open(path, encoding="utf-8") as f:
+                      payload = json.load(f)
+              except (OSError, json.JSONDecodeError):
+                  continue
+              if "targets" not in payload:
+                  continue  # a MISSED file
+              run_start = payload.get("run_start", "")
+              if run_start.startswith(today) and run_start[11:13] >= "22":
+                  found = True
+                  break
+          print(f"already_done={'true' if found else 'false'}")
+          PY
+
       - name: Set up Python 3.12
+        if: steps.check.outputs.already_done != 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install uv
+        if: steps.check.outputs.already_done != 'true'
         uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: false
 
       # Same pinned versions as environment.yml / README.md "Setup".
       - name: Install dependencies
+        if: steps.check.outputs.already_done != 'true'
         run: |
           uv pip install --system \
             "pandas==2.2.*" "numpy==1.26.*" "scipy==1.13.*" "scikit-learn==1.5.*" \
@@ -48,6 +94,7 @@ jobs:
             "pytest==8.*" "xarray==2024.*" "netcdf4==1.6.*" "opentimestamps-client==0.7.1"
 
       - name: Tests
+        if: steps.check.outputs.already_done != 'true'
         env:
           PYTHONPATH: src
         run: pytest -q
@@ -57,24 +104,32 @@ jobs:
       # via if: always() — the forecast already wrote its own MISSED record
       # and SWPC archive, and those must reach the repo either way.
       - name: Daily forecast
+        if: steps.check.outputs.already_done != 'true'
         env:
           PYTHONPATH: src
         run: python -m swcast.forecast
 
       - name: Live evaluation
-        if: always()
+        if: always() && steps.check.outputs.already_done != 'true'
         env:
           PYTHONPATH: src
         run: python -m swcast.evaluate
 
       - name: Upgrade pending OpenTimestamps proofs
-        if: always()
+        if: always() && steps.check.outputs.already_done != 'true'
         run: |
           find . -name '*.ots' -not -path './.git/*' -print0 \
             | xargs -0 -r -n1 -I{} sh -c 'ots upgrade "{}" || true'
 
+      # git pull --rebase happens AFTER the local commit (not before): the
+      # working tree has uncommitted tracked-file changes at this point
+      # (live_status.md, live_evaluation.csv, ...) from forecast/evaluate,
+      # and rebase needs a clean tree to replay onto. Committing first, then
+      # rebasing the one local commit onto origin/master, then pushing,
+      # achieves the same goal (the retry run doesn't fail at push if
+      # something else moved master in the meantime) without that conflict.
       - name: Commit and push generated artifacts
-        if: always()
+        if: always() && steps.check.outputs.already_done != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -83,5 +138,6 @@ jobs:
             echo "Nothing to commit."
           else
             git commit -m "chore(bot): daily forecast + evaluation $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git pull --rebase origin master
             git push origin HEAD:master
           fi

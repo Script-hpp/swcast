@@ -147,7 +147,8 @@ def test_select_ignores_attempts_before_22_utc(tmp_path):
     assert d not in selected
 
 
-def test_select_includes_missed_files_with_no_issue_time(tmp_path):
+def test_select_excludes_days_with_only_a_missed_file(tmp_path):
+    """A MISSED file is not a candidate at all — it must not appear in `selected`."""
     d = date(2026, 3, 1)
     missed = _write_missed(tmp_path / "x", datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc))
 
@@ -156,8 +157,43 @@ def test_select_includes_missed_files_with_no_issue_time(tmp_path):
 
     selected = select_swcast_forecasts([missed], issue_time_fn=must_not_be_called)
 
-    assert selected[d]["issue_time"] is None
-    assert "targets" not in selected[d]["payload"]
+    assert d not in selected
+
+
+def test_select_a_missed_attempt_does_not_block_a_later_successful_rerun_same_day(tmp_path):
+    """
+    PREREGISTRATION §6: a failed first attempt (MISSED) does not consume the
+    day. If a retry the same day succeeds, that successful forecast counts —
+    there's no forecast after a failure to have "chosen" between.
+    """
+    d = date(2026, 3, 1)
+    missed = _write_missed(tmp_path / "a", datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc))
+    success = _write_forecast(tmp_path / "b", datetime(2026, 3, 1, 23, 15, tzinfo=timezone.utc))
+
+    selected = select_swcast_forecasts(
+        [missed, success], issue_time_fn=lambda p: datetime(2026, 3, 1, 23, 20, tzinfo=timezone.utc)
+    )
+
+    assert selected[d]["path"] == success
+    assert selected[d]["run_start"] == datetime(2026, 3, 1, 23, 15, tzinfo=timezone.utc)
+
+
+def test_select_ignores_second_success_after_first_success_even_with_earlier_missed(tmp_path):
+    """
+    Failure order: MISSED (22:00), success #1 (22:30), success #2 (23:15).
+    Success #1 must win — no cherry-picking a later, possibly "better" rerun
+    once there IS a successful attempt.
+    """
+    d = date(2026, 3, 1)
+    missed = _write_missed(tmp_path / "a", datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc))
+    success1 = _write_forecast(tmp_path / "b", datetime(2026, 3, 1, 22, 30, tzinfo=timezone.utc))
+    success2 = _write_forecast(tmp_path / "c", datetime(2026, 3, 1, 23, 15, tzinfo=timezone.utc))
+
+    selected = select_swcast_forecasts(
+        [missed, success1, success2], issue_time_fn=lambda p: datetime(2026, 3, 1, 23, 59, tzinfo=timezone.utc)
+    )
+
+    assert selected[d]["path"] == success1
 
 
 # ---------------------------------------------------------------------------

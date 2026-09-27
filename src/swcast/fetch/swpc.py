@@ -8,9 +8,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 from swcast.config import load_config
+from swcast.net import get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ def archive_live_products() -> dict[str, Path]:
     for filename, url in LIVE_PRODUCTS.items():
         try:
             logger.info(f"Archiving {url}")
-            resp = requests.get(url, timeout=30)
+            resp = get_with_retry(url, timeout=30)
             resp.raise_for_status()
 
             out_name = f"{now_str}_{filename}"
