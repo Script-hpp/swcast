@@ -95,21 +95,27 @@ def fetch_omni_historical(year: int, use_cache: bool = True) -> pd.DataFrame:
     """
     Fetch historical 1-minute OMNI solar wind data for a given year.
     Replaces fill values (9999.99, etc.) with NaN.
+    Caches as parquet to save space, deletes the downloaded .asc file.
     """
     cache_dir = _get_cache_dir("omni")
-    file_name = f"omni_min{year}.asc"
-    cache_path = cache_dir / file_name
+    parquet_name = f"omni_min{year}.parquet"
+    parquet_path = cache_dir / parquet_name
     
-    if not (use_cache and cache_path.exists()):
-        url = f"{OMNI_MIN_BASE}/{file_name}"
-        logger.info(f"Downloading OMNI data for {year} from {url}")
-        urllib.request.urlretrieve(url, cache_path)
+    if use_cache and parquet_path.exists():
+        return pd.read_parquet(parquet_path)
+        
+    asc_name = f"omni_min{year}.asc"
+    asc_path = cache_dir / asc_name
+    url = f"{OMNI_MIN_BASE}/{asc_name}"
+    
+    logger.info(f"Downloading OMNI data for {year} from {url}")
+    urllib.request.urlretrieve(url, asc_path)
         
     usecols = [0, 1, 2, 3, 14, 17, 18, 21, 25]
     names = ["year", "doy", "hour", "minute", "bx", "by_gsm", "bz_gsm", "speed", "density"]
     
     df = pd.read_csv(
-        cache_path,
+        asc_path,
         sep=r"\s+",
         header=None,
         usecols=usecols,
@@ -130,7 +136,13 @@ def fetch_omni_historical(year: int, use_cache: bool = True) -> pd.DataFrame:
     ) + pd.to_timedelta(df["hour"], unit="h") + pd.to_timedelta(df["minute"], unit="m")
     
     cols = ["time", "bx", "by_gsm", "bz_gsm", "speed", "density"]
-    return df[cols].sort_values("time").reset_index(drop=True)
+    df = df[cols].sort_values("time").reset_index(drop=True)
+    
+    if use_cache:
+        df.to_parquet(parquet_path, index=False)
+        asc_path.unlink(missing_ok=True)
+        
+    return df
 
 
 def compute_2h_features(df: pd.DataFrame, run_start: datetime) -> dict:
