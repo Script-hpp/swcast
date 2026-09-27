@@ -1,4 +1,5 @@
-# swcast: Preregistration (Entwurf)
+# swcast: Preregistration
+Eingefroren am 2026-09-27 für swcast-kp-baseline-v0. Belege: PREREGISTRATION.md.sha256, *.tsr, *.ots.
 
 Dieses Dokument friert das Regelwerk und die genaue Definition der Benchmarks (M0) sowie des zukünftigen Live-Betriebs (M1) ein. Nach dem finalen Commit (und OpenTimestamps-Verifizierung) dürfen keine Änderungen mehr an den Validierungsregeln vorgenommen werden.
 
