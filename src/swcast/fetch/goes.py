@@ -98,13 +98,25 @@ def fetch_goes_flares(
         _download_raw_csv(raw_path, force=True)
     
     filename_path = raw_path.parent / "goes_flares_mission_length.filename"
+    
+    if not filename_path.exists():
+        # Fallback if raw CSV exists but filename does not: just fetch the current URL again
+        with requests.Session() as session:
+            url = _find_mission_length_csv_url(session)
+        filename_path.write_text(url.split("/")[-1])
+        
     coverage_end = None
     if filename_path.exists():
         orig_filename = filename_path.read_text().strip()
         # Extract eYYYYMMDD
         m = re.search(r"_e(\d{8})_", orig_filename)
         if m:
-            coverage_end = pd.Timestamp(m.group(1), tz="UTC")
+            # eYYYYMMDD means the data goes up to the END of that day (23:59:59).
+            # So the true exclusive end is exactly one day later at 00:00.
+            coverage_end = pd.Timestamp(m.group(1), tz="UTC") + pd.Timedelta(days=1)
+    
+    if coverage_end is None:
+        raise RuntimeError("Could not determine coverage_end from the GOES flare list filename.")
 
     df = pd.read_csv(
         raw_path,

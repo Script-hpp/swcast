@@ -261,7 +261,7 @@ def main() -> None:
     
     # Calculate actual data end from coverage
     gaps_valid = gaps_series[~gaps_series]
-    gaps_end = gaps_valid.index.max() if len(gaps_valid) else pd.Timestamp(REPORT_END, tz="UTC")
+    gaps_end = (gaps_valid.index.max() + pd.Timedelta(minutes=1)) if len(gaps_valid) else pd.Timestamp(REPORT_END, tz="UTC")
     flares_end = flares.attrs.get("coverage_end")
     if flares_end is None:
         flares_end = pd.Timestamp(REPORT_END, tz="UTC")
