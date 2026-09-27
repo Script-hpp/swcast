@@ -52,7 +52,7 @@ Flares automatisch korrekt in dieselbe Fensterprüfung einfließen, ohne Dedupli
 | Daten | Quelle | Nutzung | Status |
 | --- | --- | --- | --- |
 | Vorhersagen aller Scoreboard-Modelle | CCMC Flare Scoreboard: statisches Dateiarchiv unter `iswa.gsfc.nasa.gov/iswa_data_tree/model/solar/flare-scoreboard/<MODELL>/<JJJJ>/<MM>/`, ein File pro Vorhersage (primär), HAPI-API unter `iswa.gsfc.nasa.gov/IswaSystemWebApp/flarescoreboard/hapi/` (Rückfalloption) | M0 Benchmark | Archiv-Pfad bestätigt und gegen `fetch/scoreboard.py` getestet für NOAA_1 (ISES-XML, day1/2/3-Files), SIDC_v2 (ISES-XML, abweichende Tag-Namen) und ASSA_1 (Klartext-Tabelle, kein XML) |
-| GOES-Flareliste (historisch) | NOAA NCEI, GOES-R XRS Flare Summary (GOES-16 ff.), CSV/NetCDF unter `data.ngdc.noaa.gov/.../xrsf-l2-flrpt_science/` | M0 Labels | Format bestätigt; Umgang mit Überlappungen/Lücken noch offen |
+| GOES-Flareliste (historisch) | NOAA NCEI, GOES-R XRS Flare Summary (GOES-16 ff.), CSV/NetCDF unter `data.ngdc.noaa.gov/.../xrsf-l2-flrpt_science/` | M0 Labels | Format bestätigt; Überlappungen per Max-Fluss gelöst, echte Lücken >10% werden per kombiniertem G18+G19-Filter (inkl. Eclipse-Behandlung) verworfen |
 | GOES-Flares (aktuell) | NOAA SWPC JSON-Dienste (`services.swpc.noaa.gov/json/goes/`) | M0/M1 laufend | Endpunkt prüfen |
 | SWPC-Vorhersagen (M/X/C-Wahrscheinlichkeit, 3-Tage-Kp) | NOAA SWPC JSON (`services.swpc.noaa.gov/json/solar_probabilities.json`, `noaa-planetary-k-index-forecast.json`) **und** historisches FTP-Archiv `ftp.swpc.noaa.gov/pub/warehouse/<jahr>/` (Textprodukte, 1996 bis heute) | Baseline, auch rückwirkend aufbaubar | Bestätigt |
 | Kp-Index | GFZ Potsdam (Web-API `kp.gfz.de/app/json/?start=...&end=...&index=Kp&status=now\|def`) | M1 Labels | API bestätigt (siehe Abschnitt 4a) |
@@ -198,7 +198,7 @@ Für jede Zielgröße (Kp ≥ 5 für Tag +1/+2/+3; Flares C+, M+) wird der Brier
 ## 10. Entscheidungen und Offene Fragen
 
 - **Fensterkonvention:** Option b – Jedes Modell wird auf seinem eigenen Raster bewertet. Vergleichbarkeit entsteht über den BSS relativ zur auf demselben Raster berechneten Klimatologie.
-- **Datenlücken-Erkennung:** Eine echte Lücke liegt vor, wenn >10% (144 Minuten) der 1-Minuten-XRS-Mittelwerte eines 24h-Fensters fehlen oder durch Flags als fehlerhaft markiert sind (`(flag & 2) != 0`). Solche Fenster werden von der Auswertung ausgeschlossen.
+- **Datenlücken-Erkennung:** Eine echte Lücke liegt vor, wenn >10% (144 Minuten) der 1-Minuten-XRS-Mittelwerte eines 24h-Fensters fehlen oder ungültig sind. Ungültig ist eine Minute nur, wenn für *alle* verfügbaren Satelliten (kombinierte Maske aus G18 und G19) ein Fehlen (NaN), ein Fehler (`(flag & 2) != 0`) oder eine Verdeckung (Eclipse, `(flag & 1) != 0`) vorliegt. Interpolierte Daten (`(flag & 4) != 0`) bleiben gültig. Solche Lückenfenster werden von der Auswertung ausgeschlossen.
 - **Flareliste für M1:** NCEI ist maßgeblich für die endgültige Bewertung. SWPC-Echtzeit wird nur vorläufig auf der Statusseite angezeigt.
 - **Uhrzeit des täglichen Laufs:** 22:30 UTC (cron `30 22 * * *`). Wenn `issue_time >= 00:00 UTC` des Zieltags, gilt die Vorhersage als verpasst → Ersatz durch Klimatologie.
 - **Länge N des Auswertungszeitraums:** N = 365 Tage für die harte Bewertung (siehe §8 Kriterien).

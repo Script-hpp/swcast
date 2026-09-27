@@ -93,3 +93,12 @@ def test_label_windows_with_gaps():
     
     labeled = label_windows(windows, flares, gaps=gaps_series, max_gap_fraction=0.1)
     assert list(labeled["is_gap"]) == [False, True]
+
+def test_label_windows_no_gaps_provided():
+    windows = pd.DataFrame({
+        "window_start": pd.to_datetime(["2024-01-01"]),
+        "window_end": pd.to_datetime(["2024-01-02"]),
+    })
+    flares = pd.DataFrame({"peak_time": pd.to_datetime([]), "peak_flux_wm2": []})
+    labeled = label_windows(windows, flares, gaps=None)
+    assert not labeled["is_gap"].iloc[0]

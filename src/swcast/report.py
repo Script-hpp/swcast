@@ -26,9 +26,9 @@ as a new open question requiring a methodology decision, analogous to the
 existing gap-detection hard gate.
 
 GOES data-gap detection is implemented. Windows with >10% missing or bad
-telemetry are excluded from scoring.
-Note on GOES-19: NCEI data includes GOES-19, but we explicitly filter to
->= GOES-16 and generally the mission-length file is per-satellite. 
+telemetry are excluded from scoring. The gap mask intelligently combines 
+data from both GOES-18 and GOES-19, meaning a minute is only flagged as a gap 
+if BOTH satellites are missing data or are in eclipse.
 """
 
 from __future__ import annotations
@@ -411,6 +411,17 @@ def main() -> None:
         "phase), or accept that cross-model comparison is only fair among same-convention models?"
     )
     lines.append("")
+    # Automatically determine the end of complete data coverage
+    if gaps_series is not None and not flares.empty:
+        gaps_valid = gaps_series[~gaps_series]
+        if len(gaps_valid):
+            gaps_end = gaps_valid.index.max()
+            flares_end = flares["peak_time"].max().tz_localize(None)
+            actual_end = min(pd.Timestamp(REPORT_END), gaps_end, flares_end)
+            # Filter canonical windows strictly to those that end on or before the actual data end
+            canonical_report_windows = canonical_report_windows[canonical_report_windows["window_end"] <= actual_end]
+            report_labels = label_windows(canonical_report_windows, flares, gaps=gaps_series, max_gap_fraction=0.1)
+
     # Dynamically compute gap fractions to justify the threshold
     gap_fractions = []
     for w_start, w_end in zip(canonical_report_windows["window_start"], canonical_report_windows["window_end"]):
@@ -428,49 +439,52 @@ def main() -> None:
     canonical_report_windows["gap_fraction"] = gap_fractions
     n_above_5 = (canonical_report_windows["gap_fraction"] > 0.05).sum()
     n_above_10 = (canonical_report_windows["gap_fraction"] > 0.10).sum()
+    windows_above_5 = canonical_report_windows[(canonical_report_windows["gap_fraction"] > 0.05) & (canonical_report_windows["gap_fraction"] <= 0.10)]
     
     lines.append("## GOES data-gap detection")
     lines.append("")
     lines.append(
         "A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute "
-        "XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) in the NCEI GOES science data. "
-        "**Important:** Eclipse (bit 1) and interpolated data (bit 4) do *not* count as gaps, because they represent "
-        "known, unavoidable solar obscuration (which doesn't mean telemetry failed) or valid patched data respectively."
-    )
-    lines.append("")
-    lines.append(
-        f"**Why 10%?** A dynamic analysis of the {len(canonical_report_windows)} canonical windows in the report period shows that "
-        f"{n_above_5} windows had between 5% and 10% missing telemetry, but {n_above_10} windows had >10%. "
-        "Short telemetry drops or maintenance periods occasionally span 5-9% of a day (e.g. 1-2 hours), "
-        "which still leaves enough continuous data to catch major flares. Dropping more than 10% risks missing short-lived events, "
-        "so the threshold is set at 10% to retain mostly-valid days while excluding severely broken ones."
+        "XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) across ALL available satellites (G18 and G19 combined). "
+        "**Important:** Eclipse (bit 1) IS counted as a gap because the Earth blocks the satellite's view of the sun, "
+        "causing flares to be missed. Interpolated data (bit 4) does *not* count as a gap because it represents valid patched data. "
+        "A minute is only marked as a gap if BOTH G18 and G19 lack valid observations."
     )
     lines.append("")
     
     n_gap_canonical = int(report_labels["is_gap"].sum())
-    lines.append(f"In the current benchmark period (ending exactly at the GOES-18 data end on {REPORT_END}), "
-                 f"there are **{n_gap_canonical} true telemetry gaps >10%**.")
+    
+    lines.append(
+        f"**Why 10%?** A dynamic analysis of the {len(canonical_report_windows)} canonical windows (up to the data end) shows that "
+        f"{n_above_5} windows had between 5% and 10% missing telemetry, and {n_above_10} windows had >10%."
+    )
+    if n_above_5 > 0:
+        lines.append(f" Windows with 5-10% missing: {', '.join(w.strftime('%Y-%m-%d') for w in windows_above_5['window_start'])}.")
+    
+    lines.append(
+        " Short telemetry drops occasionally span 5-9% of a day, which still leaves enough continuous data to catch major flares. "
+        "Dropping more than 10% risks missing short-lived events, so the threshold is set at 10% to retain mostly-valid days."
+    )
     lines.append("")
     
-    lines.append("**Limitation regarding GOES-19:** The gap mask exclusively uses the GOES-18 mission-length "
-                 "1-minute averages file. However, in the fetched flare list for this period, "
-                 "a small portion of flares (e.g., 73 out of 1555) were recorded by GOES-19. A perfect gap mask "
-                 "would union the coverage of both satellites, but currently only the primary satellite's gaps are checked.")
+    lines.append(f"In the current benchmark period, there are **{n_gap_canonical} true telemetry gaps >10%**.")
     lines.append("")
 
-    if n_gap_canonical > 0:
-        lines.append("### Sensitivity: With vs. Without Gap Filtering")
+    lines.append("### Sensitivity: With vs. Without Gap Filtering")
+    lines.append("")
+    if n_gap_canonical == 0 and n_above_5 == 0:
+        lines.append("Because there were 0 true telemetry gaps >10% and 0 between 5-10% in this period, the leaderboard ranking is identical to a gap-ignorant run.")
+    else:
+        lines.append("Comparison of NOAA_1 (day-1) metrics on the canonical grid across different gap thresholds:")
         lines.append("")
-        lines.append("Comparison of NOAA_1 (day-1) metrics on the canonical grid when properly excluding gap windows versus ignoring the gap flags:")
-        lines.append("")
-        lines.append("| Class | Metric | With Gap Filter | Without Gap Filter (Gap-Ignorant) |")
-        lines.append("| --- | --- | --- | --- |")
+        lines.append("| Class | Metric | 10% Filter (Actual) | 5% Filter (Strict) | No Filter (Gap-Ignorant) |")
+        lines.append("| --- | --- | --- | --- | --- |")
         
         for class_name in CLASSES:
             if class_name not in MODEL_CLASSES["NOAA_1"]:
                 continue
             
-            # Filtered is already in common_metrics
+            # Filtered (10%)
             filtered_metrics = report_sections[class_name]["common_metrics"]["NOAA_1 (day-1, canonical grid)"]
             
             # Compute unfiltered (gap-ignorant)
@@ -481,10 +495,18 @@ def main() -> None:
             )
             unfiltered_metrics = compute_metrics(unfiltered_df)
             
-            if filtered_metrics and unfiltered_metrics:
-                lines.append(f"| {class_name} | n | {filtered_metrics['n']} | {unfiltered_metrics['n']} |")
-                lines.append(f"| {class_name} | Brier | {_fmt(filtered_metrics['brier'])} | {_fmt(unfiltered_metrics['brier'])} |")
-                lines.append(f"| {class_name} | BSS | {_fmt(filtered_metrics['bss'])} | {_fmt(unfiltered_metrics['bss'])} |")
+            # Compute 5% strict filter
+            strict_labels = report_labels.copy()
+            strict_labels["is_gap"] = canonical_report_windows["gap_fraction"].values > 0.05
+            strict_df = prepare_series(
+                canonical_prob_df(noaa_by_day[1], class_name), class_name, strict_labels, baselines[class_name]
+            )
+            strict_metrics = compute_metrics(strict_df)
+            
+            if filtered_metrics and unfiltered_metrics and strict_metrics:
+                lines.append(f"| {class_name} | n | {filtered_metrics['n']} | {strict_metrics['n']} | {unfiltered_metrics['n']} |")
+                lines.append(f"| {class_name} | Brier | {_fmt(filtered_metrics['brier'])} | {_fmt(strict_metrics['brier'])} | {_fmt(unfiltered_metrics['brier'])} |")
+                lines.append(f"| {class_name} | BSS | {_fmt(filtered_metrics['bss'])} | {_fmt(strict_metrics['bss'])} | {_fmt(unfiltered_metrics['bss'])} |")
         
     lines.append("")
     lines.append("## Window conventions and lead time")

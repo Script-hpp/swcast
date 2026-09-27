@@ -10,14 +10,26 @@ Verified against live data (2026-09-27): **NOAA_1** issues 24h, UTC-midnight-ali
 
 ## GOES data-gap detection
 
-A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) in the NCEI GOES science data. **Important:** Eclipse (bit 1) and interpolated data (bit 4) do *not* count as gaps, because they represent known, unavoidable solar obscuration (which doesn't mean telemetry failed) or valid patched data respectively.
+A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) across ALL available satellites (G18 and G19 combined). **Important:** Eclipse (bit 1) IS counted as a gap because the Earth blocks the satellite's view of the sun, causing flares to be missed. Interpolated data (bit 4) does *not* count as a gap because it represents valid patched data. A minute is only marked as a gap if BOTH G18 and G19 lack valid observations.
 
-**Why 10%?** A dynamic analysis of the 181 canonical windows in the report period shows that 5 windows had between 5% and 10% missing telemetry, but 0 windows had >10%. Short telemetry drops or maintenance periods occasionally span 5-9% of a day (e.g. 1-2 hours), which still leaves enough continuous data to catch major flares. Dropping more than 10% risks missing short-lived events, so the threshold is set at 10% to retain mostly-valid days while excluding severely broken ones.
+**Why 10%?** A dynamic analysis of the 181 canonical windows (up to the data end) shows that 1 windows had between 5% and 10% missing telemetry, and 0 windows had >10%.
+ Windows with 5-10% missing: 2026-09-22.
+ Short telemetry drops occasionally span 5-9% of a day, which still leaves enough continuous data to catch major flares. Dropping more than 10% risks missing short-lived events, so the threshold is set at 10% to retain mostly-valid days.
 
-In the current benchmark period (ending exactly at the GOES-18 data end on 2026-09-25), there are **0 true telemetry gaps >10%**.
+In the current benchmark period, there are **0 true telemetry gaps >10%**.
 
-**Limitation regarding GOES-19:** The gap mask exclusively uses the GOES-18 mission-length 1-minute averages file. However, in the fetched flare list for this period, a small portion of flares (e.g., 73 out of 1555) were recorded by GOES-19. A perfect gap mask would union the coverage of both satellites, but currently only the primary satellite's gaps are checked.
+### Sensitivity: With vs. Without Gap Filtering
 
+Comparison of NOAA_1 (day-1) metrics on the canonical grid across different gap thresholds:
+
+| Class | Metric | 10% Filter (Actual) | 5% Filter (Strict) | No Filter (Gap-Ignorant) |
+| --- | --- | --- | --- | --- |
+| M+ | n | 177 | 176 | 177 |
+| M+ | Brier | 0.190 | 0.191 | 0.190 |
+| M+ | BSS | 0.048 | 0.045 | 0.048 |
+| X | n | 177 | 176 | 177 |
+| X | Brier | 0.031 | 0.031 | 0.031 |
+| X | BSS | -0.094 | -0.095 | -0.094 |
 
 ## Window conventions and lead time
 
@@ -60,8 +72,8 @@ Events on canonical grid in report period: 166 of 181 windows. (SIDC_v2/ASSA_1 e
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
 | SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 151 | 0.092 [0.051, 0.114] | 0.103 | 0.453 (@0.78) | 0.177 |
-| ASSA_1 (own 12h grid, full hourly) | 4174 | 3328 | 0.206 [0.174, 0.232] | -0.272 | 0.243 (@0.48) | 0.116 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 171 | 134 | 0.189 [0.150, 0.217] | -0.100 | 0.412 (@0.47) | 0.244 |
+| ASSA_1 (own 12h grid, full hourly) | 4219 | 3369 | 0.206 [0.174, 0.231] | -0.278 | 0.244 (@0.48) | 0.114 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 172 | 135 | 0.190 [0.152, 0.216] | -0.108 | 0.412 (@0.47) | 0.239 |
 | Climatology (canonical grid) | 181 | 166 | 0.078 [0.016, 0.109] | 0.000 | 0.358 (@0.96) | 0.000 |
 | Persistence (canonical grid) | 181 | 166 | 0.093 [0.053, 0.120] | -0.194 | 0.418 (@0.80) | 0.418 |
 | Rolling 27d rate (canonical grid) | 181 | 166 | 0.077 [0.018, 0.106] | 0.006 | 0.190 (@0.96) | 0.000 |
@@ -84,9 +96,9 @@ Events on canonical grid in report period: 166 of 181 windows. (SIDC_v2/ASSA_1 e
 | --- | --- | --- | --- |
 | 0.10 | 0.138 | 0.271 | 96 |
 | 0.30 | 0.317 | 0.631 | 407 |
-| 0.50 | 0.503 | 0.813 | 2012 |
-| 0.70 | 0.711 | 0.753 | 757 |
-| 0.90 | 0.895 | 0.930 | 902 |
+| 0.50 | 0.503 | 0.814 | 2040 |
+| 0.70 | 0.711 | 0.754 | 764 |
+| 0.90 | 0.894 | 0.931 | 912 |
 
 **ASSA_1 (own 12h grid, ~1/day near NOAA issue time)**
 
@@ -94,7 +106,7 @@ Events on canonical grid in report period: 166 of 181 windows. (SIDC_v2/ASSA_1 e
 | --- | --- | --- | --- |
 | 0.10 | 0.095 | 0.000 | 4 |
 | 0.30 | 0.295 | 0.538 | 13 |
-| 0.50 | 0.498 | 0.776 | 85 |
+| 0.50 | 0.497 | 0.779 | 86 |
 | 0.70 | 0.711 | 0.788 | 33 |
 | 0.90 | 0.898 | 0.972 | 36 |
 
@@ -140,8 +152,8 @@ Events on canonical grid in report period: 49 of 181 windows. (SIDC_v2/ASSA_1 ev
 | NOAA_1 (day-2, canonical grid) | 177 | 48 | 0.205 [0.181, 0.251] | -0.009 | 0.183 (@0.40) | 0.085 |
 | NOAA_1 (day-3, canonical grid) | 0 | - | - | - | - | - |
 | SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 42 | 0.188 [0.166, 0.228] | 0.045 | 0.538 (@0.35) | 0.274 |
-| ASSA_1 (own 12h grid, full hourly) | 4195 | 786 | 0.146 [0.120, 0.183] | 0.043 | 0.270 (@0.18) | 0.122 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 172 | 31 | 0.137 [0.108, 0.178] | 0.073 | 0.307 (@0.12) | 0.133 |
+| ASSA_1 (own 12h grid, full hourly) | 4240 | 796 | 0.147 [0.119, 0.182] | 0.040 | 0.262 (@0.18) | 0.120 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 173 | 31 | 0.137 [0.107, 0.176] | 0.073 | 0.311 (@0.12) | 0.133 |
 | Climatology (canonical grid) | 181 | 49 | 0.203 [0.189, 0.235] | 0.000 | 0.118 (@0.33) | 0.000 |
 | Persistence (canonical grid) | 181 | 49 | 0.192 [0.164, 0.232] | 0.052 | 0.356 (@0.80) | 0.356 |
 | Rolling 27d rate (canonical grid) | 181 | 49 | 0.208 [0.187, 0.261] | -0.026 | 0.034 (@0.26) | 0.011 |
@@ -182,8 +194,8 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.108 | 0.149 | 3092 |
-| 0.30 | 0.278 | 0.254 | 800 |
+| 0.10 | 0.108 | 0.150 | 3125 |
+| 0.30 | 0.278 | 0.250 | 812 |
 | 0.50 | 0.485 | 0.250 | 132 |
 | 0.70 | 0.702 | 0.473 | 150 |
 | 0.90 | 0.856 | 0.905 | 21 |
@@ -192,7 +204,7 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.108 | 0.142 | 127 |
+| 0.10 | 0.108 | 0.141 | 128 |
 | 0.30 | 0.283 | 0.242 | 33 |
 | 0.50 | 0.518 | 0.200 | 5 |
 | 0.70 | 0.707 | 0.571 | 7 |
@@ -241,8 +253,8 @@ Events on canonical grid in report period: 5 of 181 windows. (SIDC_v2/ASSA_1 eve
 | NOAA_1 (day-2, canonical grid) | 177 | 5 | 0.031 [0.011, 0.047] | -0.093 | 0.148 (@0.20) | 0.000 |
 | NOAA_1 (day-3, canonical grid) | 0 | - | - | - | - | - |
 | SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 5 | 0.031 [0.012, 0.049] | 0.043 | 0.412 (@0.10) | 0.000 |
-| ASSA_1 (own 12h grid, full hourly) | 4195 | 57 | 0.014 [0.002, 0.024] | -0.004 | 0.270 (@0.04) | 0.000 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 172 | 2 | 0.012 [0.000, 0.024] | -0.125 | 0.124 (@0.01) | 0.000 |
+| ASSA_1 (own 12h grid, full hourly) | 4240 | 67 | 0.016 [0.005, 0.026] | -0.010 | 0.213 (@0.04) | 0.000 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 173 | 2 | 0.012 [0.000, 0.024] | -0.124 | 0.120 (@0.01) | 0.000 |
 | Climatology (canonical grid) | 181 | 5 | 0.027 [0.007, 0.045] | 0.000 | 0.000 (@0.04) | 0.000 |
 | Persistence (canonical grid) | 181 | 5 | 0.073 [0.048, 0.098] | -1.674 | 0.000 (@0.20) | -0.028 |
 | Rolling 27d rate (canonical grid) | 181 | 5 | 0.028 [0.007, 0.046] | -0.016 | 0.000 (@0.00) | 0.000 |
@@ -277,13 +289,13 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.013 | 0.014 | 4195 |
+| 0.10 | 0.012 | 0.016 | 4240 |
 
 **ASSA_1 (own 12h grid, ~1/day near NOAA issue time)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.012 | 0.012 | 172 |
+| 0.10 | 0.012 | 0.012 | 173 |
 
 **Climatology (canonical grid)**
 

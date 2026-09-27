@@ -130,51 +130,77 @@ def _find_mission_length_nc_url(session: requests.Session, satellite: int) -> st
     return url + sorted(matches)[-1]
 
 
+def build_gap_series(ds_dict: dict[int, "xr.Dataset"], start_date: str, end_date: str) -> pd.Series:
+    """Pure function to build the combined gap mask from multiple datasets."""
+    start_ts = pd.Timestamp(start_date, tz="UTC").tz_localize(None)
+    end_ts = pd.Timestamp(end_date, tz="UTC").tz_localize(None)
+    
+    # Create the common 1-minute grid
+    common_idx = pd.date_range(start_ts, end_ts, freq="1min", inclusive="left")
+    combined_gap = pd.Series(True, index=common_idx)
+    
+    for sat, ds in ds_dict.items():
+        ds_sub = ds.sel(time=slice(start_ts, end_ts))
+        
+        # Missing rows in the file will naturally become NaN when we reindex later,
+        # but first let's build a series for this satellite.
+        times = ds_sub["time"].to_pandas().dt.tz_localize(None)
+        
+        # flag_meanings: good_data(0) eclipse(1) bad_data(2) interpolated(4)
+        # 1 (eclipse) and 2 (bad_data) are invalid. 4 (interpolated) is valid.
+        flag_vals = ds_sub["xrsb_flag"].to_pandas().fillna(0).astype(int)
+        
+        is_bad = ((flag_vals & 2) != 0) | ((flag_vals & 1) != 0)
+        is_nan = ds_sub["xrsb_flux"].to_pandas().isna()
+        
+        # A point is a gap for THIS satellite if it's bad or NaN
+        sat_gap = is_bad | is_nan
+        sat_gap.index = times
+        
+        # Reindex to common grid. Missing rows become True (gap)
+        sat_gap_reindexed = sat_gap.reindex(common_idx, fill_value=True)
+        
+        # Combined gap: minute is gap only if ALL satellites have a gap
+        combined_gap = combined_gap & sat_gap_reindexed
+        
+    return combined_gap
+
 def fetch_goes_1m_gaps(
     data_dir: Path,
     start_date: str,
     end_date: str,
-    satellite: int = 18,
+    satellites: tuple[int, ...] = (18, 19),
     force_download: bool = False,
 ) -> pd.Series:
     """Return a boolean pandas Series (index: time, value: True if data is MISSING or BAD).
 
-    Downloads the mission-length 1-minute average science netCDF for the given satellite.
-    Values are considered missing if `xrsb_flux` is NaN or `(xrsb_flag & 2) != 0` (bad_data).
-    Note that `xrsb_flag` is a bitmask: good_data(0), eclipse(1), bad_data(2), interpolated(4).
-    Eclipse and interpolated data are NOT treated as gaps because they represent known 
-    temporary obscuration or valid patched data.
-    
-    If the requested end_date is beyond the available data in the NetCDF file, those
-    times will not be in the returned series (labels.py should treat missing rows as gaps).
+    Downloads the mission-length 1-minute average science netCDF for the given satellites.
+    A minute is considered a gap if ALL specified satellites have missing/invalid data.
+    Values are considered invalid if `xrsb_flux` is NaN, or if `(xrsb_flag & 2) != 0` (bad_data),
+    or if `(xrsb_flag & 1) != 0` (eclipse).
+    Eclipse is treated as a gap because the Earth blocks the satellite's view of the sun.
+    Interpolated data (`(xrsb_flag & 4) != 0`) remains valid.
     """
     import xarray as xr
 
-    raw_path = Path(data_dir) / "raw" / f"goes{satellite}_xrs_1m_mission_length.nc"
-    if not raw_path.exists() or force_download:
-        raw_path.parent.mkdir(parents=True, exist_ok=True)
-        with requests.Session() as session:
-            url = _find_mission_length_nc_url(session, satellite)
-            resp = session.get(url, timeout=120)
-            resp.raise_for_status()
-        raw_path.write_bytes(resp.content)
+    ds_dict = {}
+    for satellite in satellites:
+        raw_path = Path(data_dir) / "raw" / f"goes{satellite}_xrs_1m_mission_length.nc"
+        if not raw_path.exists() or force_download:
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            with requests.Session() as session:
+                url = _find_mission_length_nc_url(session, satellite)
+                resp = session.get(url, timeout=120)
+                resp.raise_for_status()
+            raw_path.write_bytes(resp.content)
 
-    ds = xr.open_dataset(raw_path)
-    
-    start_ts = pd.Timestamp(start_date, tz="UTC").tz_localize(None)
-    end_ts = pd.Timestamp(end_date, tz="UTC").tz_localize(None)
+        ds = xr.open_dataset(raw_path)
+        ds_dict[satellite] = ds
 
-    # Subset to time range to save memory
-    ds_sub = ds.sel(time=slice(start_ts, end_ts))
+    combined_gap = build_gap_series(ds_dict, start_date, end_date)
     
-    # xrsb_flag is a bitmask. 2 is bad_data.
-    flag_vals = ds_sub["xrsb_flag"].to_pandas().fillna(0).astype(int)
-    is_bad = (flag_vals & 2) != 0
-    is_nan = ds_sub["xrsb_flux"].to_pandas().isna()
-    
-    # True means it's a gap/missing/bad
-    is_gap = is_bad | is_nan
-    
-    ds.close()
-    return is_gap
+    for ds in ds_dict.values():
+        ds.close()
+        
+    return combined_gap
 
