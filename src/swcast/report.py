@@ -58,7 +58,7 @@ from swcast.metrics import (
 )
 
 REPORT_START = "2026-03-28"
-REPORT_END = "2026-09-25"
+REPORT_END = "2026-10-01"
 CLIMATOLOGY_LOOKBACK_DAYS = 365
 ROLLING_RATE_DAYS = 27
 BOOTSTRAP_BLOCK_DAYS = 27
@@ -259,11 +259,23 @@ def main() -> None:
         data_dir, history_start, flare_fetch_end, gaps_series=gaps_series
     )
     
+    # Calculate actual data end from coverage
+    gaps_valid = gaps_series[~gaps_series]
+    gaps_end = gaps_valid.index.max() if len(gaps_valid) else pd.Timestamp(REPORT_END, tz="UTC")
+    flares_end = flares.attrs.get("coverage_end")
+    if flares_end is None:
+        flares_end = pd.Timestamp(REPORT_END, tz="UTC")
+    actual_end_naive = min(pd.Timestamp(REPORT_END, tz="UTC"), gaps_end.tz_localize("UTC"), flares_end).tz_localize(None)
+
+    # Filter all canonical labels and windows to actual data end BEFORE leaderboard calculation
+    labels_all = labels_all[labels_all["window_end"] <= actual_end_naive]
+    report_labels = report_labels[report_labels["window_end"] <= actual_end_naive]
+    
     n_gap_canonical = int(report_labels["is_gap"].sum())
     print(f"Gap detection excluded {n_gap_canonical} canonical windows.")
 
     baselines = build_baselines(labels_all, pd.Timestamp(REPORT_START))
-    canonical_report_windows = make_windows(REPORT_START, REPORT_END)
+    canonical_report_windows = make_windows(REPORT_START, actual_end_naive.strftime("%Y-%m-%d"))
 
     print("Fetching scoreboard forecasts (this hits the live CCMC archive)...")
     raw = {model: fetch_scoreboard_model(model, REPORT_START, REPORT_END, data_dir) for model in MODELS}
@@ -411,17 +423,6 @@ def main() -> None:
         "phase), or accept that cross-model comparison is only fair among same-convention models?"
     )
     lines.append("")
-    # Automatically determine the end of complete data coverage
-    if gaps_series is not None and not flares.empty:
-        gaps_valid = gaps_series[~gaps_series]
-        if len(gaps_valid):
-            gaps_end = gaps_valid.index.max()
-            flares_end = flares["peak_time"].max().tz_localize(None)
-            actual_end = min(pd.Timestamp(REPORT_END), gaps_end, flares_end)
-            # Filter canonical windows strictly to those that end on or before the actual data end
-            canonical_report_windows = canonical_report_windows[canonical_report_windows["window_end"] <= actual_end]
-            report_labels = label_windows(canonical_report_windows, flares, gaps=gaps_series, max_gap_fraction=0.1)
-
     # Dynamically compute gap fractions to justify the threshold
     gap_fractions = []
     for w_start, w_end in zip(canonical_report_windows["window_start"], canonical_report_windows["window_end"]):
@@ -437,9 +438,9 @@ def main() -> None:
         gap_fractions.append(missing / expected)
     
     canonical_report_windows["gap_fraction"] = gap_fractions
-    n_above_5 = (canonical_report_windows["gap_fraction"] > 0.05).sum()
-    n_above_10 = (canonical_report_windows["gap_fraction"] > 0.10).sum()
     windows_above_5 = canonical_report_windows[(canonical_report_windows["gap_fraction"] > 0.05) & (canonical_report_windows["gap_fraction"] <= 0.10)]
+    n_above_5 = len(windows_above_5)
+    n_above_10 = (canonical_report_windows["gap_fraction"] > 0.10).sum()
     
     lines.append("## GOES data-gap detection")
     lines.append("")

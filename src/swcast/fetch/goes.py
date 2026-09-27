@@ -41,7 +41,8 @@ def _find_mission_length_csv_url(session: requests.Session) -> str:
 
 
 def _download_raw_csv(cache_path: Path, force: bool = False) -> Path:
-    if cache_path.exists() and not force:
+    filename_path = cache_path.parent / "goes_flares_mission_length.filename"
+    if cache_path.exists() and filename_path.exists() and not force:
         return cache_path
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     with requests.Session() as session:
@@ -49,6 +50,8 @@ def _download_raw_csv(cache_path: Path, force: bool = False) -> Path:
         resp = session.get(url, timeout=120)
         resp.raise_for_status()
     cache_path.write_bytes(resp.content)
+    # Save the original filename alongside it
+    (cache_path.parent / "goes_flares_mission_length.filename").write_text(url.split("/")[-1])
     return cache_path
 
 
@@ -90,7 +93,18 @@ def fetch_goes_flares(
     peak, not its onset).
     """
     raw_path = Path(data_dir) / "raw" / "goes_flares_mission_length.csv"
-    _download_raw_csv(raw_path, force=force_download)
+    
+    if not raw_path.exists() or force_download:
+        _download_raw_csv(raw_path, force=True)
+    
+    filename_path = raw_path.parent / "goes_flares_mission_length.filename"
+    coverage_end = None
+    if filename_path.exists():
+        orig_filename = filename_path.read_text().strip()
+        # Extract eYYYYMMDD
+        m = re.search(r"_e(\d{8})_", orig_filename)
+        if m:
+            coverage_end = pd.Timestamp(m.group(1), tz="UTC")
 
     df = pd.read_csv(
         raw_path,
@@ -117,7 +131,9 @@ def fetch_goes_flares(
         & (df["start_time"] >= pd.Timestamp(start_date, tz="UTC").tz_localize(None))
         & (df["start_time"] <= pd.Timestamp(end_date, tz="UTC").tz_localize(None))
     )
-    return df.loc[mask].sort_values("start_time").reset_index(drop=True)
+    res = df.loc[mask].sort_values("start_time").reset_index(drop=True)
+    res.attrs["coverage_end"] = coverage_end
+    return res
 
 
 def _find_mission_length_nc_url(session: requests.Session, satellite: int) -> str:
