@@ -2,6 +2,7 @@ import logging
 import json
 import subprocess
 from pathlib import Path
+import pandas as pd
 
 from swcast.config import load_config
 from swcast.training.dataset import build_training_dataset
