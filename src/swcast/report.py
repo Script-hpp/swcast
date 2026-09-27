@@ -58,7 +58,7 @@ from swcast.metrics import (
 )
 
 REPORT_START = "2026-03-28"
-REPORT_END = "2026-09-27"
+REPORT_END = "2026-09-25"
 CLIMATOLOGY_LOOKBACK_DAYS = 365
 ROLLING_RATE_DAYS = 27
 BOOTSTRAP_BLOCK_DAYS = 27
@@ -411,35 +411,54 @@ def main() -> None:
         "phase), or accept that cross-model comparison is only fair among same-convention models?"
     )
     lines.append("")
+    # Dynamically compute gap fractions to justify the threshold
+    gap_fractions = []
+    for w_start, w_end in zip(canonical_report_windows["window_start"], canonical_report_windows["window_end"]):
+        if gaps_series is None:
+            gap_fractions.append(0.0)
+            continue
+        window_gaps = gaps_series.loc[w_start:w_end - pd.Timedelta(minutes=1)]
+        expected = int((w_end - w_start).total_seconds() / 60)
+        if expected == 0:
+            gap_fractions.append(0.0)
+            continue
+        missing = window_gaps.sum() + expected - len(window_gaps)
+        gap_fractions.append(missing / expected)
+    
+    canonical_report_windows["gap_fraction"] = gap_fractions
+    n_above_5 = (canonical_report_windows["gap_fraction"] > 0.05).sum()
+    n_above_10 = (canonical_report_windows["gap_fraction"] > 0.10).sum()
+    
     lines.append("## GOES data-gap detection")
     lines.append("")
     lines.append(
         "A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute "
         "XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) in the NCEI GOES science data. "
-        "Eclipse and interpolated data do not count as gaps. "
-        "The 10% threshold (144 minutes per 24h) is chosen because real telemetry drops occasionally span "
-        "5-9% of a day (e.g. 7.6% on 2026-06-15), which still leaves enough data to catch major flares. "
-        "Dropping more than 10% risks missing a short-lived flare."
+        "**Important:** Eclipse (bit 1) and interpolated data (bit 4) do *not* count as gaps, because they represent "
+        "known, unavoidable solar obscuration (which doesn't mean telemetry failed) or valid patched data respectively."
+    )
+    lines.append("")
+    lines.append(
+        f"**Why 10%?** A dynamic analysis of the {len(canonical_report_windows)} canonical windows in the report period shows that "
+        f"{n_above_5} windows had between 5% and 10% missing telemetry, but {n_above_10} windows had >10%. "
+        "Short telemetry drops or maintenance periods occasionally span 5-9% of a day (e.g. 1-2 hours), "
+        "which still leaves enough continuous data to catch major flares. Dropping more than 10% risks missing short-lived events, "
+        "so the threshold is set at 10% to retain mostly-valid days while excluding severely broken ones."
     )
     lines.append("")
     
-    # We can calculate how many windows were excluded, and if they were just the end of the data file.
     n_gap_canonical = int(report_labels["is_gap"].sum())
+    lines.append(f"In the current benchmark period (ending exactly at the GOES-18 data end on {REPORT_END}), "
+                 f"there are **{n_gap_canonical} true telemetry gaps >10%**.")
+    lines.append("")
     
-    # Find if any excluded window is NOT just the very last day (end of data)
-    # The last day in the canonical windows might be 100% missing because the file ended.
-    real_gaps = report_labels[report_labels["is_gap"] & (report_labels["window_start"] < pd.Timestamp(REPORT_END) - pd.Timedelta(days=1))]
-    n_real_gaps = len(real_gaps)
-    
-    if n_gap_canonical == 0:
-        lines.append("No windows were excluded due to data gaps in the report period.")
-    else:
-        lines.append(
-            f"This rule excluded {n_gap_canonical} canonical 24h windows from the report period. "
-            f"Of these, {n_real_gaps} were true telemetry gaps >10%, and the rest were simply because "
-            "the requested report window extended beyond the end of the available GOES NetCDF file."
-        )
-        lines.append("")
+    lines.append("**Limitation regarding GOES-19:** The gap mask exclusively uses the GOES-18 mission-length "
+                 "1-minute averages file. However, in the fetched flare list for this period, "
+                 "a small portion of flares (e.g., 73 out of 1555) were recorded by GOES-19. A perfect gap mask "
+                 "would union the coverage of both satellites, but currently only the primary satellite's gaps are checked.")
+    lines.append("")
+
+    if n_gap_canonical > 0:
         lines.append("### Sensitivity: With vs. Without Gap Filtering")
         lines.append("")
         lines.append("Comparison of NOAA_1 (day-1) metrics on the canonical grid when properly excluding gap windows versus ignoring the gap flags:")

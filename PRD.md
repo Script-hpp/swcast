@@ -56,7 +56,7 @@ Flares automatisch korrekt in dieselbe Fensterprüfung einfließen, ohne Dedupli
 | GOES-Flares (aktuell) | NOAA SWPC JSON-Dienste (`services.swpc.noaa.gov/json/goes/`) | M0/M1 laufend | Endpunkt prüfen |
 | SWPC-Vorhersagen (M/X/C-Wahrscheinlichkeit, 3-Tage-Kp) | NOAA SWPC JSON (`services.swpc.noaa.gov/json/solar_probabilities.json`, `noaa-planetary-k-index-forecast.json`) **und** historisches FTP-Archiv `ftp.swpc.noaa.gov/pub/warehouse/<jahr>/` (Textprodukte, 1996 bis heute) | Baseline, auch rückwirkend aufbaubar | Bestätigt |
 | Kp-Index | GFZ Potsdam (Web-API `kp.gfz.de/app/json/?start=...&end=...&index=Kp&status=now\|def`) | M1 Labels | API bestätigt (siehe Abschnitt 4a) |
-| Sonnenwind L1 | NOAA SWPC (live), NASA OMNI (historisch) | M1 Eingabe, später | optional in M1 |
+| Sonnenwind L1 | NOAA SWPC (live, DSCOVR/ACE), NASA OMNI (historisch) | M1 Eingabe | Pflicht für M1 (Endpunkt live noch prüfen) |
 
 **Hinweis GOES-Kalibrierung:** Ältere GOES-Satelliten (bis GOES-15) wurden operativ mit einem
 Skalierungsfaktor veröffentlicht, der in den wissenschaftlichen Daten später entfernt wurde. Dadurch
@@ -110,7 +110,7 @@ für 1998–2024 aus genau diesem FTP-Archiv und eignet sich als externe Kontrol
 ### Meilenstein 1 – Kp-Baseline live
 
 - **FR-1.1** Tägliche Vorhersage des maximalen Kp für Tag +1 bis +3 aus: Persistenz, 27-Tage-Rekurrenz,
-  Klimatologie, einfache Mischung (z. B. gewichtetes Mittel, Gewichte aus historischen Daten).
+  Klimatologie und **L1-Sonnenwind**, zusammengeführt über eine einfache Mischung (z. B. gewichtetes Mittel). **Wichtig:** Mischungsgewichte und Rekalibrierung werden *ausschließlich* auf historischen Daten vor dem Einfrieren angepasst.
 - **FR-1.2** Zusätzlich Wahrscheinlichkeit für Kp ≥ 5 je Tag.
 - **FR-1.3** Täglicher Lauf per GitHub Actions zu fester Uhrzeit (UTC, vorab festgelegt).
 - **FR-1.4** Jede Vorhersage wird als JSON-Datei gespeichert, per SHA-256 gehasht und der Hash über
@@ -178,6 +178,12 @@ Daten liegen außerhalb des Repositorys unter `DATA_DIR` und werden nur über Sk
 - Der tägliche Lauf 7 Tage in Folge ohne manuellen Eingriff funktioniert hat.
 - Die Auswertung für diese 7 Tage automatisch erzeugt wurde.
 
+**Langfristiges Erfolgskriterium (N = 365 Tage):**
+Für jede Zielgröße (Kp ≥ 5 für Tag +1/+2/+3; Flares C+, M+) wird der Brier Skill Score (BSS) gegen die eigene Klimatologie berechnet. Die Differenz $\Delta \text{BSS} = \text{BSS}(\text{swcast}) - \text{BSS}(\text{SWPC})$ wird per 95-%-Block-Bootstrap-KI (27-Tage-Blöcke) auf exakt denselben Tagen ausgewertet:
+- **"Mithalten":** Die untere Grenze des 95-%-KI von $\Delta \text{BSS}$ liegt über $-0,05$.
+- **"Übertreffen":** Die untere Grenze des 95-%-KI von $\Delta \text{BSS}$ liegt über $0$.
+(Zwischenstände nach 90 und 180 Tagen dienen nur der beschreibenden Beobachtung.)
+
 ## 9. Reihenfolge der Aufgaben
 
 1. Repository, Umgebung, `config.yaml` anlegen.
@@ -186,16 +192,17 @@ Daten liegen außerhalb des Repositorys unter `DATA_DIR` und werden nur über Sk
 4. `fetch/scoreboard.py`, dann `metrics.py` mit Tests an kleinen Hand-Beispielen.
 5. Benchmark-Bericht M0 erzeugen.
 6. `PREREGISTRATION.md` schreiben und einfrieren.
-7. `fetch/kp.py`, `fetch/swpc.py`, `baselines.py`, `freeze.py`.
+7. `fetch/kp.py`, `fetch/swpc.py`, `fetch/solarwind.py`, `baselines.py`, `freeze.py`.
 8. GitHub-Actions-Workflow, 7-Tage-Testlauf.
 
-## 10. Offene Fragen
+## 10. Entscheidungen und Offene Fragen
 
-- **Fensterkonvention (Entschieden am 27.09.2026):** Option b – Jedes Modell wird auf seinem eigenen Raster bewertet. Vergleichbarkeit entsteht über den BSS relativ zur auf demselben Raster berechneten Klimatologie. FR-0.6 wurde entsprechend angepasst.
-- **Datenlücken-Erkennung (Entschieden am 27.09.2026):** Eine echte Lücke liegt vor, wenn >10% (144 Minuten) der 1-Minuten-XRS-Mittelwerte eines 24h-Fensters fehlen oder durch Flags als fehlerhaft markiert sind (`(flag & 2) != 0`). Solche Fenster werden von der Auswertung ausgeschlossen.
-- **Flareliste für M1 (Entschieden am 27.09.2026):** NCEI ist maßgeblich für die endgültige Bewertung. SWPC-Echtzeit wird nur vorläufig auf der Statusseite angezeigt (analog zum Kp-Index).
-- **Uhrzeit des täglichen Laufs (Entschieden am 27.09.2026):** 22:30 UTC (cron `30 22 * * *`). Wenn `issue_time >= 00:00 UTC` des Zieltags, gilt die Vorhersage als verpasst → Ersatz durch Klimatologie.
-- **Länge N des Auswertungszeitraums (Entschieden am 27.09.2026):** N = 365 Tage für die harte "Mithalten"-Bewertung. Zwischenstände nach 90 und 180 Tagen sind nur beschreibend.
+- **Fensterkonvention:** Option b – Jedes Modell wird auf seinem eigenen Raster bewertet. Vergleichbarkeit entsteht über den BSS relativ zur auf demselben Raster berechneten Klimatologie.
+- **Datenlücken-Erkennung:** Eine echte Lücke liegt vor, wenn >10% (144 Minuten) der 1-Minuten-XRS-Mittelwerte eines 24h-Fensters fehlen oder durch Flags als fehlerhaft markiert sind (`(flag & 2) != 0`). Solche Fenster werden von der Auswertung ausgeschlossen.
+- **Flareliste für M1:** NCEI ist maßgeblich für die endgültige Bewertung. SWPC-Echtzeit wird nur vorläufig auf der Statusseite angezeigt.
+- **Uhrzeit des täglichen Laufs:** 22:30 UTC (cron `30 22 * * *`). Wenn `issue_time >= 00:00 UTC` des Zieltags, gilt die Vorhersage als verpasst → Ersatz durch Klimatologie.
+- **Länge N des Auswertungszeitraums:** N = 365 Tage für die harte Bewertung (siehe §8 Kriterien).
+- **Grundregel Einfrieren:** Nach dem Einfrieren wird das Modell *niemals* aufgrund von Live-Ergebnissen geändert. Jede Verbesserung führt zu einer komplett neuen Modellversion (z. B. `swcast-kp-baseline-v1`) mit eigenem Zeitstempel und eigener paralleler Wertung. Der tägliche Lauf bleibt strikt vollautomatisch.
 
 ## 11. Risiken
 
