@@ -15,14 +15,15 @@ def run_pipeline():
     cfg = load_config()
     reports_dir = Path(cfg["paths"]["reports_dir"])
     reports_dir.mkdir(parents=True, exist_ok=True)
-    models_dir = cfg["data_dir"] / "models" / "swcast-kp-baseline-v0"
+    repo_dir = Path(__file__).resolve().parent.parent.parent.parent
+    models_dir = repo_dir / "models" / "swcast-kp-baseline-v0"
     models_dir.mkdir(parents=True, exist_ok=True)
     
     logger.info("Building training dataset...")
     df = build_training_dataset(2005, 2025)
     
-    # Save dataset to compute SHA256 later
-    dataset_path = models_dir / "training_data.parquet"
+    # Save dataset to DATA_DIR to avoid cluttering repo
+    dataset_path = cfg["data_dir"] / "training_data_v0.parquet"
     df.to_parquet(dataset_path, index=False)
     
     # Compute SHA256
