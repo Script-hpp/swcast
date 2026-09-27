@@ -1,0 +1,1 @@
+Die .ots-Datei ist erst nach einigen Stunden in Bitcoin bestätigt; später mit ots upgrade aktualisieren und das upgegradete .ots separat committen. Das ist erlaubt, weil sich die Preregistration dadurch nicht ändert.
