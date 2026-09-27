@@ -35,12 +35,16 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
     Endpoints:
     - https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json
     - https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json
+    
+    Quality Handling:
+    - Only records from the currently active spacecraft ('active' == True) are used.
+    - Quality fields ('overall_quality', 'max_data_flag') are preserved in the output for transparency, 
+      but no strict thresholding is applied here because invalid measurements are already returned 
+      as 'null' in the JSON by SWPC, which naturally excludes them during feature extraction.
+    - The source spacecraft ('source') is stored per minute.
     """
     mag_url = f"{SWPC_JSON_BASE}/rtsw_mag_1m.json"
     wind_url = f"{SWPC_JSON_BASE}/rtsw_wind_1m.json"
-    
-    # Normally we do not cache live data as it updates continuously,
-    # but we allow it for testing if needed.
     
     mag_resp = requests.get(mag_url)
     mag_resp.raise_for_status()
@@ -54,12 +58,29 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
     df_wind = pd.DataFrame(wind_data)
     
     if df_mag.empty or df_wind.empty:
-        return pd.DataFrame(columns=["time", "bx", "by_gsm", "bz_gsm", "speed", "density"])
+        return pd.DataFrame(columns=["time", "bx", "by_gsm", "bz_gsm", "speed", "density", "source", "overall_quality", "max_data_flag"])
         
+    # Filter for active spacecraft only
+    df_mag = df_mag[df_mag["active"] == True].copy()
+    df_wind = df_wind[df_wind["active"] == True].copy()
+    
     df_mag["time"] = pd.to_datetime(df_mag["time_tag"], utc=True)
     df_wind["time"] = pd.to_datetime(df_wind["time_tag"], utc=True)
     
-    df = pd.merge(df_mag, df_wind, on="time", how="outer")
+    if not df_mag["time"].is_unique:
+        raise ValueError("Duplicate timestamps found in live SWPC mag data after filtering for active=True.")
+    if not df_wind["time"].is_unique:
+        raise ValueError("Duplicate timestamps found in live SWPC wind data after filtering for active=True.")
+    
+    # We want to merge the two dataframes. They should theoretically come from the same source if active=True.
+    # To preserve source cleanly, we can rename them or assume they match. We'll use the mag source as primary 
+    # (or check they are consistent if joined).
+    df = pd.merge(df_mag, df_wind, on="time", how="outer", suffixes=('_mag', '_wind'))
+    
+    # Combine source if one is missing
+    df["source"] = df["source_mag"].combine_first(df["source_wind"])
+    df["overall_quality"] = df["overall_quality_mag"].combine_first(df["overall_quality_wind"])
+    df["max_data_flag"] = df["max_data_flag_mag"].combine_first(df["max_data_flag_wind"])
     
     df = df.rename(columns={
         "bx_gsm": "bx",  # SWPC gives bx_gsm which is same as bx_gse
@@ -67,8 +88,7 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
         "proton_density": "density"
     })
     
-    # Return uniform columns
-    cols = ["time", "bx", "by_gsm", "bz_gsm", "speed", "density"]
+    cols = ["time", "bx", "by_gsm", "bz_gsm", "speed", "density", "source", "overall_quality", "max_data_flag"]
     return df[[c for c in cols if c in df.columns]].sort_values("time").reset_index(drop=True)
 
 
@@ -84,25 +104,14 @@ def fetch_omni_historical(year: int, use_cache: bool = True) -> pd.DataFrame:
     if not (use_cache and cache_path.exists()):
         url = f"{OMNI_MIN_BASE}/{file_name}"
         logger.info(f"Downloading OMNI data for {year} from {url}")
-        # Note: can be large (20-30 MB)
         urllib.request.urlretrieve(url, cache_path)
         
-    # Parse OMNI 1-min ASCII
-    # Column indices (0-based):
-    # 0: Year, 1: Day, 2: Hour, 3: Minute
-    # 14: Bx (GSE/GSM)
-    # 17: By (GSM)
-    # 18: Bz (GSM)
-    # 21: Flow speed (km/s)
-    # 25: Proton Density (n/cc)
-    
-    # We load only the required columns to save memory
     usecols = [0, 1, 2, 3, 14, 17, 18, 21, 25]
     names = ["year", "doy", "hour", "minute", "bx", "by_gsm", "bz_gsm", "speed", "density"]
     
     df = pd.read_csv(
         cache_path,
-        delim_whitespace=True,
+        sep=r"\s+",
         header=None,
         usecols=usecols,
         names=names,
@@ -145,8 +154,6 @@ def compute_2h_features(df: pd.DataFrame, run_start: datetime) -> dict:
     mask = (df["time"] >= window_start) & (df["time"] < run_start)
     df_win = df[mask].copy()
     
-    # Compute per-minute features
-    # Required base columns
     df_win = df_win.dropna(subset=["by_gsm", "bz_gsm", "speed", "density"])
     
     valid_minutes = len(df_win)
@@ -155,15 +162,9 @@ def compute_2h_features(df: pd.DataFrame, run_start: datetime) -> dict:
         
     df_win["dyn_pressure"] = df_win["density"] * (df_win["speed"] ** 2)
     
-    # Newell coupling
-    # B_T = sqrt(By^2 + Bz^2)
-    # theta_c = atan2(By, Bz)
     bt = np.sqrt(df_win["by_gsm"]**2 + df_win["bz_gsm"]**2)
     theta_c = np.arctan2(df_win["by_gsm"], df_win["bz_gsm"])
     
-    # Newell = V^(4/3) * B_T^(2/3) * (sin(theta_c/2))^(8/3)
-    # Using absolute value of sin for robustness, though theta_c/2 is in [-pi/2, pi/2] where sin can be negative,
-    # the 8/3 power is equivalent to (sin^2)^(4/3). We compute np.abs(sin(theta_c/2))**(8/3).
     sin_tc2 = np.abs(np.sin(theta_c / 2.0))
     newell = (df_win["speed"] ** (4/3)) * (bt ** (2/3)) * (sin_tc2 ** (8/3))
     

@@ -47,20 +47,17 @@ def get_kp_dataframe(start: datetime, end: datetime, status: str = "def", use_ca
     if not data.get("datetime"):
         df_api = pd.DataFrame(columns=["time", "kp"])
     else:
+        # Convert Kp values to numeric, coercing errors (like 'pre' or nulls) to NaN
+        kp_vals = pd.to_numeric(data["Kp"], errors='coerce')
         df_api = pd.DataFrame({
             "time": pd.to_datetime(data["datetime"], utc=True),
-            "kp": data["Kp"]
+            "kp": kp_vals
         })
+        # If there are negative values indicating missing, replace with NaN
+        df_api.loc[df_api["kp"] < 0, "kp"] = float("nan")
     
-    # Ensure complete 3-hourly grid
-    full_grid = pd.date_range(start=start, end=end, freq="3h", tz=timezone.utc, inclusive="both")
-    # Actually date_range with '3h' might not align exactly if start is not 00,03 etc.
-    # We should floor the start and ceil the end to nearest 3h.
     grid_start = start.floor("3h")
     grid_end = end.floor("3h")
-    if grid_end < end:
-        # We just want the grid to cover the requested range up to end
-        pass
     full_grid = pd.date_range(start=grid_start, end=grid_end, freq="3h", tz=timezone.utc)
     
     df_grid = pd.DataFrame({"time": full_grid})
@@ -89,20 +86,26 @@ def daily_storm_label(df: pd.DataFrame) -> pd.DataFrame:
     Compute daily storm label.
     Storm = max Kp on UTC day >= 5.0 (5- = 4.667 is not enough).
     """
-    # Group by UTC day
     df_daily = df.copy()
     df_daily["date"] = df_daily["time"].dt.date
     
-    # We also want to mark a day as having a gap if any 3h interval is missing
     daily = df_daily.groupby("date").agg(
         max_kp=("kp", "max"),
         has_gap=("is_gap", "any"),
         gap_count=("is_gap", "sum")
     ).reset_index()
     
-    daily["storm_label"] = daily["max_kp"] >= 5.0
-    # If all values are NaN, max_kp is NaN, so storm_label is False. Let's make it NaN or False but we should check has_gap.
-    # The requirement: "Tage, an denen im GFZ-Nowcast Lücken herrschen, werden von der Auswertung ausgeschlossen".
-    # So we provide the gap info to downstream.
+    # If max_kp >= 5.0, it's definitely a storm regardless of gaps.
+    # If max_kp < 5.0 but there is a gap, we don't know if a storm occurred -> NaN
+    # If max_kp < 5.0 and no gap -> False
+    
+    def get_label(row):
+        if pd.notna(row["max_kp"]) and row["max_kp"] >= 5.0:
+            return True
+        if row["has_gap"]:
+            return float("nan")
+        return False
+        
+    daily["storm_label"] = daily.apply(get_label, axis=1)
     
     return daily
