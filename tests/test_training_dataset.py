@@ -29,7 +29,7 @@ def test_dataset_no_leakage(mock_compute_2h, mock_fetch_omni, mock_fetch_kp):
     
     mock_fetch_kp.return_value = df_kp
     
-    df_omni = pd.DataFrame()
+    df_omni = pd.DataFrame(columns=["time", "bx", "by_gsm", "bz_gsm", "speed", "density"])
     mock_fetch_omni.return_value = df_omni
     
     mock_compute_2h.return_value = {

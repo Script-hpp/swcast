@@ -47,3 +47,16 @@ def test_daily_storm_label_with_gaps():
     daily2 = daily_storm_label(df2)
     assert daily2.iloc[0]["has_gap"]
     assert daily2.iloc[0]["storm_label"] == True
+
+from swcast.fetch.kp import get_persistence_intervals
+
+def test_get_persistence_intervals():
+    run_time = datetime(2026, 9, 27, 22, 30, tzinfo=timezone.utc)
+    intervals = get_persistence_intervals(run_time)
+    assert len(intervals) == 8
+    assert intervals[-1] == datetime(2026, 9, 27, 18, 0, tzinfo=timezone.utc)
+    assert intervals[0] == datetime(2026, 9, 26, 21, 0, tzinfo=timezone.utc)
+    
+    run_time = datetime(2026, 9, 28, 0, 0, tzinfo=timezone.utc)
+    intervals = get_persistence_intervals(run_time)
+    assert intervals[-1] == datetime(2026, 9, 27, 21, 0, tzinfo=timezone.utc)

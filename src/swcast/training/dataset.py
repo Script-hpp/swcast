@@ -35,14 +35,12 @@ def build_training_dataset(start_year: int = 2005, end_year: int = 2025) -> pd.D
     while current_date <= end_date:
         run_datetime = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=22, minutes=30)
         
-        # 1. Persistence: max Kp over last 8 complete 3h intervals before 22:30
-        # Intervals: D-1 21:00 to D 18:00 (since 18:00-21:00 ends at 21:00)
+        # 1. Persistence: max Kp over last 8 complete 3h intervals before run_datetime
+        from swcast.fetch.kp import get_persistence_intervals
+        persistence_intervals = get_persistence_intervals(run_datetime)
+        
         persistence_kps = []
-        for i in range(8):
-            # Interval starts
-            # D 18:00 is the latest start
-            dt_start = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=18) - timedelta(hours=3*i)
-            # The API returns pd.Timestamp in UTC
+        for dt_start in persistence_intervals:
             ts = pd.Timestamp(dt_start)
             val = kp_interval_dict.get(ts, np.nan)
             if pd.notna(val):

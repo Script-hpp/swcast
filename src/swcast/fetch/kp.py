@@ -10,6 +10,28 @@ from swcast.config import load_config
 
 logger = logging.getLogger(__name__)
 
+from datetime import timedelta
+
+def get_persistence_intervals(run_time: datetime) -> list[datetime]:
+    """
+    Returns the start times of the 8 complete 3h intervals immediately before run_time.
+    For run_time = D 22:30 UTC, returns intervals starting from D-1 21:00 to D 18:00.
+    This strictly excludes the ongoing interval (e.g. 21:00 to 00:00).
+    """
+    current_interval_start = run_time.replace(minute=0, second=0, microsecond=0)
+    current_interval_start -= timedelta(hours=current_interval_start.hour % 3)
+    
+    if current_interval_start + timedelta(hours=3) <= run_time:
+        latest_complete_start = current_interval_start
+    else:
+        latest_complete_start = current_interval_start - timedelta(hours=3)
+        
+    intervals = []
+    for i in range(8):
+        intervals.append(latest_complete_start - timedelta(hours=3*i))
+        
+    return sorted(intervals)
+
 GFZ_KP_URL = "https://kp.gfz.de/app/json/"
 
 def fetch_kp_raw(start: datetime, end: datetime, status: str = "def", use_cache: bool = True) -> dict:
