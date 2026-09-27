@@ -56,6 +56,17 @@ def test_best_true_skill_statistic_finds_perfect_threshold():
     assert 0.4 < threshold <= 0.6
 
 
+def test_best_true_skill_statistic_no_positive_events_returns_nan_not_crash():
+    # All-zero y_true -> sensitivity is 0/0 (NaN) at every threshold. Must
+    # return NaN gracefully, not raise (this is a real, common case: a rare
+    # class with zero events in a short window).
+    y_true = [0, 0, 0, 0]
+    y_prob = [0.1, 0.4, 0.6, 0.9]
+    best_tss, threshold = best_true_skill_statistic(y_true, y_prob)
+    assert np.isnan(best_tss)
+    assert np.isnan(threshold)
+
+
 def test_reliability_diagram_two_bins_hand_example():
     y_true = [0, 0, 1, 1]
     y_prob = [0.2, 0.4, 0.6, 0.8]

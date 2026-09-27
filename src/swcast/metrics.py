@@ -47,10 +47,16 @@ def best_true_skill_statistic(
 ) -> tuple[float, float]:
     """Search all distinct forecast probabilities as candidate thresholds and
     return (max_tss, threshold_at_max). Ties keep the first (lowest) threshold.
+
+    TSS is undefined (NaN) at every threshold when `y_true` has no positive
+    events (sensitivity is 0/0) or no negative events (specificity is 0/0);
+    in that case returns (nan, nan) rather than raising.
     """
     y_prob = np.asarray(y_prob, dtype=float)
     candidates = np.unique(y_prob)
     scores = [true_skill_statistic(y_true, y_prob, t) for t in candidates]
+    if np.all(np.isnan(scores)):
+        return float("nan"), float("nan")
     best_idx = int(np.nanargmax(scores))
     return scores[best_idx], float(candidates[best_idx])
 

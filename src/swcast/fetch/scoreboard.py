@@ -28,13 +28,20 @@ not zero.
 
 from __future__ import annotations
 
+import concurrent.futures as cf
 import re
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pandas as pd
 import requests
 
 ARCHIVE_BASE_URL = "https://iswa.gsfc.nasa.gov/iswa_data_tree/model/solar/flare-scoreboard"
+
+# Hard cap: never open more than this many concurrent connections to the
+# CCMC/ISWA archive, regardless of what a caller passes in (politeness to a
+# shared, unauthenticated public server).
+MAX_CONCURRENT_CONNECTIONS = 4
 
 # Full-disk flux-bin names, as submitted by each model, normalized to the
 # classes used elsewhere in swcast (PRD.md Abschnitt 3/6).
@@ -140,8 +147,39 @@ _PARSERS = {
 }
 
 
-def fetch_scoreboard_model(model: str, start_date: str, end_date: str) -> pd.DataFrame:
+def _cache_path(data_dir: Path, model: str, year: int, month: int, filename: str) -> Path:
+    return Path(data_dir) / "raw" / "scoreboard" / model / f"{year:04d}" / f"{month:02d}" / filename
+
+
+def _fetch_one_file(session: requests.Session, file_url: str, cache_path: Path) -> bytes | None:
+    """Return the file's bytes, from the local cache if present, else from
+    the network (caching the result). Returns None on a non-200 response so
+    the caller can skip it rather than crash the whole batch.
+    """
+    if cache_path.exists():
+        return cache_path.read_bytes()
+    resp = session.get(file_url, timeout=30)
+    if resp.status_code != 200:
+        return None
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(resp.content)
+    return resp.content
+
+
+def fetch_scoreboard_model(
+    model: str,
+    start_date: str,
+    end_date: str,
+    data_dir: Path,
+    max_workers: int = MAX_CONCURRENT_CONNECTIONS,
+) -> pd.DataFrame:
     """Download and parse one model's Full-Disk forecasts in [start_date, end_date].
+
+    Raw files are cached under `data_dir/raw/scoreboard/<model>/<year>/<month>/`
+    and re-used on subsequent calls without re-downloading. Downloads run
+    concurrently, capped at `MAX_CONCURRENT_CONNECTIONS` (4) connections to
+    the CCMC/ISWA archive regardless of `max_workers` -- this server is
+    shared and unauthenticated, so we stay polite.
 
     Columns: model, class, issue_time, window_start, window_end, probability
     (PRD.md FR-0.1).
@@ -155,16 +193,24 @@ def fetch_scoreboard_model(model: str, start_date: str, end_date: str) -> pd.Dat
     parser = _PARSERS[model]
     start = pd.Timestamp(start_date)
     end = pd.Timestamp(end_date)
+    max_workers = min(max_workers, MAX_CONCURRENT_CONNECTIONS)
 
     rows: list[dict] = []
     with requests.Session() as session:
+        jobs: list[tuple[str, Path]] = []
         for period in pd.period_range(start, end, freq="M"):
             for file_url in list_forecast_files(session, model, period.year, period.month):
-                resp = session.get(file_url, timeout=30)
-                if resp.status_code != 200:
+                filename = file_url.rsplit("/", 1)[-1]
+                jobs.append((file_url, _cache_path(data_dir, model, period.year, period.month, filename)))
+
+        with cf.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(_fetch_one_file, session, url, path) for url, path in jobs]
+            for future in cf.as_completed(futures):
+                content = future.result()
+                if content is None:
                     continue
                 try:
-                    rows.extend(parser(resp.content, model))
+                    rows.extend(parser(content, model))
                 except ET.ParseError:
                     continue
 
@@ -177,4 +223,11 @@ def fetch_scoreboard_model(model: str, start_date: str, end_date: str) -> pd.Dat
     for col in ("issue_time", "window_start", "window_end"):
         df[col] = pd.to_datetime(df[col])
     mask = (df["window_start"] >= start) & (df["window_start"] <= end)
-    return df.loc[mask].sort_values(["issue_time", "class"]).reset_index(drop=True)
+    # Sort key must fully disambiguate rows for deterministic output: parallel
+    # downloads complete in a nondeterministic order, and NOAA's day1/day2/day3
+    # files share the same issue_time (only window_start differs between them).
+    return (
+        df.loc[mask]
+        .sort_values(["issue_time", "window_start", "class"])
+        .reset_index(drop=True)
+    )
