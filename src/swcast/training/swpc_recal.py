@@ -37,7 +37,7 @@ def platt_scale_swpc():
         # SWPC issue_date + i = target_date. 
         # Wait, for a 22:00 product, issue_time is e.g. 2010-09-14 22:00. target_date for day + 1 is 2010-09-15.
         # Let's compute day_ahead directly: target_date - issue_time.floor('D')
-        df_merged['day_ahead'] = (pd.to_datetime(df_merged['target_date']) - pd.to_datetime(df_merged['issue_time']).dt.floor('D')).dt.days
+        df_merged['day_ahead'] = (pd.to_datetime(df_merged['target_date']) - pd.to_datetime(df_merged['issue_time']).dt.tz_localize(None).dt.floor('D')).dt.days
         
         df_day = df_merged[df_merged['day_ahead'] == i].copy()
         
