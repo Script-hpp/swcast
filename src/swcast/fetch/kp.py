@@ -52,7 +52,7 @@ def fetch_kp_raw(start: datetime, end: datetime, status: str = "def", use_cache:
             
     url = f"{GFZ_KP_URL}?start={start_str}&end={end_str}&index=Kp&status={status}"
     logger.info(f"Fetching Kp from {url}")
-    resp = requests.get(url)
+    resp = requests.get(url, timeout=30)
     resp.raise_for_status()
     data = resp.json()
     

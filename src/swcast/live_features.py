@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 from swcast.fetch.kp import daily_storm_label, fetch_nowcast, get_persistence_intervals
-from swcast.fetch.solarwind import FallbackError, compute_2h_features, fetch_swpc_live
+from swcast.fetch.solarwind import compute_2h_features, fetch_swpc_live
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,10 @@ def build_live_features(run_start: datetime) -> dict:
             # used GFZ-nowcast persistence interval, and, if l1_valid, the
             # latest valid L1 minute in the 2h window (whichever is later).
         "l1_valid": bool,
+        "l1_fallback_reason": str | None,
+            # set whenever l1_valid is False: the exception type and message
+            # from fetching/computing L1 (SWPC rtsw down, timeout, malformed
+            # JSON, or FallbackError for <60/120 valid minutes).
         "days": {
           1: {"target_date": date, "persistence": float, "recurrence": float,
               "climatology": float, "l1_bz_gsm": float, "l1_by_gsm": float,
@@ -64,8 +68,10 @@ def build_live_features(run_start: datetime) -> dict:
         },
       }
 
-    If compute_2h_features raises FallbackError (fewer than 60/120 valid
-    L1 minutes), l1_valid is False and all l1_* values are NaN for every day.
+    Any failure fetching or computing L1 (SWPC rtsw API down, timeout,
+    malformed response, or FallbackError for fewer than 60/120 valid
+    minutes) is treated the same: l1_valid is False, all l1_* values are NaN
+    for every day, and l1_fallback_reason records why.
     """
     current_date = run_start.date()
 
@@ -106,18 +112,24 @@ def build_live_features(run_start: datetime) -> dict:
     climatology = clim_storms / clim_valid_days if clim_valid_days > 0 else np.nan
 
     # --- SWPC rtsw: L1 solar wind ------------------------------------------
-    df_l1 = fetch_swpc_live()
+    # Any failure here (API down, timeout, empty/malformed JSON, or the
+    # <60/120-valid-minutes FallbackError) must fall back to the fallback
+    # model per PREREGISTRATION §7 ("irgendein L1-Merkmal fehlt"), not crash
+    # the whole run — fetch_swpc_live() is therefore inside this try too.
     l1_features = None
     last_l1_time = None
+    l1_fallback_reason = None
     try:
+        df_l1 = fetch_swpc_live()
         l1_features = compute_2h_features(df_l1, run_start)
         window_start = run_start - timedelta(hours=2)
         mask = (df_l1["time"] >= window_start) & (df_l1["time"] < run_start)
         df_win = df_l1[mask].dropna(subset=["by_gsm", "bz_gsm", "speed", "density"])
         if not df_win.empty:
             last_l1_time = df_win["time"].max().to_pydatetime()
-    except FallbackError as exc:
-        logger.warning("L1 fallback for run_start=%s: %s", run_start, exc)
+    except Exception as exc:
+        l1_fallback_reason = f"{type(exc).__name__}: {exc}"
+        logger.warning("L1 fallback for run_start=%s: %s", run_start, l1_fallback_reason)
 
     l1_valid = l1_features is not None
 
@@ -147,6 +159,7 @@ def build_live_features(run_start: datetime) -> dict:
         "run_start": run_start,
         "inputs_last_data_time": inputs_last_data_time,
         "l1_valid": l1_valid,
+        "l1_fallback_reason": l1_fallback_reason,
         "days": days,
     }
 

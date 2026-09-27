@@ -27,7 +27,7 @@ def test_fetch_swpc_live_filtering():
         def json(self): return self._json
         def raise_for_status(self): pass
         
-    def mock_get(url):
+    def mock_get(url, **kwargs):
         if "mag" in url: return MockResponse(mag_data)
         if "wind" in url: return MockResponse(wind_data)
         return MockResponse([])

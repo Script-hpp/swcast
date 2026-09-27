@@ -165,53 +165,65 @@ def parse_daypre(text: str) -> pd.DataFrame:
     return pd.DataFrame(res)
 
 
+LIVE_PRODUCTS = {
+    "solar_probabilities.json": f"{SWPC_JSON_BASE}/solar_probabilities.json",
+    "noaa-planetary-k-index-forecast.json": f"{SWPC_JSON_BASE}/noaa-planetary-k-index-forecast.json",
+    "3-day-solar-geomag-predictions.txt": f"{SWPC_TEXT_BASE}/3-day-solar-geomag-predictions.txt",
+    "sgarf.txt": f"{SWPC_TEXT_BASE}/sgarf.txt",
+}
+
+
 def archive_live_products() -> dict[str, Path]:
     """
     Fetch and archive live SWPC products with fetch time.
-    Also verifies that daypre and sgarf are consistent.
-    Returns the paths to the archived files.
+    Also verifies that daypre and sgarf are consistent, if both were fetched.
+
+    Each product is fetched independently: a failure fetching one product
+    (network error, timeout, HTTP error) is logged and skipped, and does not
+    prevent the others from being archived. The daily run must not go down
+    because a single SWPC product is unavailable.
+
+    Returns the paths to the successfully archived files (a subset of
+    LIVE_PRODUCTS' keys if some fetches failed).
     """
     archive_dir = _get_archive_dir()
     now_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    
-    products = {
-        "solar_probabilities.json": f"{SWPC_JSON_BASE}/solar_probabilities.json",
-        "noaa-planetary-k-index-forecast.json": f"{SWPC_JSON_BASE}/noaa-planetary-k-index-forecast.json",
-        "3-day-solar-geomag-predictions.txt": f"{SWPC_TEXT_BASE}/3-day-solar-geomag-predictions.txt",
-        "sgarf.txt": f"{SWPC_TEXT_BASE}/sgarf.txt"
-    }
-    
+
     saved_paths = {}
-    
-    for filename, url in products.items():
-        logger.info(f"Archiving {url}")
-        resp = requests.get(url)
-        resp.raise_for_status()
-        
-        out_name = f"{now_str}_{filename}"
-        out_path = archive_dir / out_name
-        
-        with open(out_path, "wb") as f:
-            f.write(resp.content)
-            
-        saved_paths[filename] = out_path
-        
-    with open(saved_paths["3-day-solar-geomag-predictions.txt"], "r") as f:
-        daypre_text = f.read()
-    with open(saved_paths["sgarf.txt"], "r") as f:
-        sgarf_text = f.read()
-        
-    try:
-        df_daypre = parse_daypre(daypre_text)
-        df_sgarf = parse_rsga(sgarf_text)
-        
-        pd.testing.assert_frame_equal(
-            df_daypre[["target_date", "p_minor_storm", "p_major_severe_storm"]],
-            df_sgarf[["target_date", "p_minor_storm", "p_major_severe_storm"]]
-        )
-    except Exception as e:
-        logger.warning(f"Inconsistency between daypre and sgarf products: {e}")
-        
+
+    for filename, url in LIVE_PRODUCTS.items():
+        try:
+            logger.info(f"Archiving {url}")
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+
+            out_name = f"{now_str}_{filename}"
+            out_path = archive_dir / out_name
+
+            with open(out_path, "wb") as f:
+                f.write(resp.content)
+
+            saved_paths[filename] = out_path
+        except Exception as exc:
+            logger.error(f"Failed to archive {filename} from {url}: {exc}")
+
+    if "3-day-solar-geomag-predictions.txt" in saved_paths and "sgarf.txt" in saved_paths:
+        with open(saved_paths["3-day-solar-geomag-predictions.txt"], "r") as f:
+            daypre_text = f.read()
+        with open(saved_paths["sgarf.txt"], "r") as f:
+            sgarf_text = f.read()
+
+        try:
+            df_daypre = parse_daypre(daypre_text)
+            df_sgarf = parse_rsga(sgarf_text)
+
+            pd.testing.assert_frame_equal(
+                df_daypre[["target_date", "p_minor_storm", "p_major_severe_storm"]],
+                df_sgarf[["target_date", "p_minor_storm", "p_major_severe_storm"]]
+            )
+        except Exception as e:
+            logger.warning(f"Inconsistency between daypre and sgarf products: {e}")
+
     return saved_paths
 
 

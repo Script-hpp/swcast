@@ -309,3 +309,50 @@ def test_inputs_last_data_time_uses_last_valid_l1_minute(mock_nowcast, mock_comp
     # last valid L1 minute (22:20) is later than the persistence interval end
     # (2010-01-01 21:00), so it must win.
     assert live["inputs_last_data_time"] == last_valid_minute
+
+
+# ---------------------------------------------------------------------------
+# build_live_features(): SWPC rtsw outages (not just FallbackError) fall back
+# ---------------------------------------------------------------------------
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.fetch_nowcast")
+def test_build_live_features_falls_back_on_swpc_fetch_error(mock_nowcast, mock_swpc):
+    """
+    fetch_swpc_live() itself can raise (HTTP error, timeout, empty/malformed
+    JSON) — this must be treated exactly like FallbackError: l1_valid=False,
+    a reason recorded, and the run must not crash.
+    """
+    df_kp = _make_shared_kp_df()
+    mock_nowcast.return_value = df_kp
+    mock_swpc.side_effect = ConnectionError("SWPC rtsw API unreachable")
+
+    run_start = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)
+    live = build_live_features(run_start)  # must not raise
+
+    assert live["l1_valid"] is False
+    assert "ConnectionError" in live["l1_fallback_reason"]
+    assert "unreachable" in live["l1_fallback_reason"]
+    for i in (1, 2, 3):
+        for k in ["l1_bz_gsm", "l1_by_gsm", "l1_speed", "l1_dyn_pressure", "l1_newell"]:
+            assert math.isnan(live["days"][i][k])
+        assert not math.isnan(live["days"][i]["persistence"])
+
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.compute_2h_features")
+@patch("swcast.live_features.fetch_nowcast")
+def test_build_live_features_l1_valid_has_no_fallback_reason(mock_nowcast, mock_compute2h, mock_swpc):
+    df_kp = _make_shared_kp_df()
+    mock_nowcast.return_value = df_kp
+    mock_swpc.return_value = pd.DataFrame(columns=["time", "by_gsm", "bz_gsm", "speed", "density"])
+    mock_compute2h.return_value = {
+        "bz_gsm": -5.0, "by_gsm": 1.0, "speed": 400.0,
+        "dyn_pressure": 2.0, "newell": 3000.0, "valid_minutes": 120,
+    }
+
+    run_start = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)
+    live = build_live_features(run_start)
+
+    assert live["l1_valid"] is True
+    assert live["l1_fallback_reason"] is None

@@ -211,3 +211,12 @@ Für jede Zielgröße (Kp ≥ 5 für Tag +1/+2/+3; Flares C+, M+) wird der Brier
 | GOES-Kalibrierungswechsel verfälscht Labels | Nur GOES-16+ für M0 |
 | Datenquelle ändert Format | Schema-Checks im täglichen Lauf, Fehler schlägt laut fehl |
 | GitHub-Actions-Ausfall | Verpasste-Tage-Regel; Monitoring per Benachrichtigung |
+
+## 12. Ausblick (nach Live-Start von v0)
+
+Diese Ideen sind unverbindlich und ändern `swcast-kp-baseline-v0` nicht. Nach §9 der PREREGISTRATION erhält jede methodische Verbesserung eine eigene Modellversion mit eigener Preregistration und eigener, paralleler Wertung; v0 läuft dabei unverändert weiter.
+
+- **Kp v1 (`swcast-kp-v1`):** Zusätzliche Merkmale: CME-Ankunftsprognosen (NASA DONKI, inklusive WSA-Enlil-Läufe) und eine Kennzahl der Fläche koronaler Löcher aus SDO/AIA 193 Å (als Zahl, keine Rohbilder). Ziel: Verbesserung von Tag +2/+3. Begründung: Im historischen Vergleich in `reports/training_v0.md` übertrifft Tag +1 SWPC (ΔBSS +0,057 [+0,017; +0,100] gegen die rekalibrierte SWPC-Referenz), während Tag +2/+3 unter SWPC liegen — vermutlich, weil v0 keine CME-Information nutzt.
+- **Meilenstein 2 (Flares):** Zuerst mit SHARP-Kennzahlen (abgeleitete Magnetfeld-Merkmale aktiver Regionen), analog zum Kennzahl-Ansatz von v0/v1.
+- **Optional, später:** CNN auf Rohbildern (Magnetogramme/AIA) — nur wenn die Kennzahl-Modelle stagnieren. Braucht GPU oder Cloud-Rechenzeit und sprengt das Laptop-Budget aus §1; daher erst, wenn dafür ein separates Budget/eine separate Infrastruktur feststeht.
+- **Regel:** Jede neue Version bekommt eine eigene Preregistration und eine eigene, parallele Wertung (PREREGISTRATION §9). Keine Version wird rückwirkend an einer laufenden Version verändert.

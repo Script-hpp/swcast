@@ -45,11 +45,11 @@ def fetch_swpc_live(use_cache: bool = False) -> pd.DataFrame:
     mag_url = f"{SWPC_JSON_BASE}/rtsw_mag_1m.json"
     wind_url = f"{SWPC_JSON_BASE}/rtsw_wind_1m.json"
     
-    mag_resp = requests.get(mag_url)
+    mag_resp = requests.get(mag_url, timeout=30)
     mag_resp.raise_for_status()
     mag_data = mag_resp.json()
-    
-    wind_resp = requests.get(wind_url)
+
+    wind_resp = requests.get(wind_url, timeout=30)
     wind_resp.raise_for_status()
     wind_data = wind_resp.json()
     
