@@ -162,8 +162,14 @@ def compute_2h_features(df: pd.DataFrame, run_start: datetime) -> dict:
     A minute is valid if it has all required data (bz, by, speed, density).
     """
     window_start = run_start - timedelta(hours=2)
-    mask = (df["time"] >= window_start) & (df["time"] < run_start)
-    df_win = df[mask].copy()
+    window_end = run_start - timedelta(seconds=1)
+    
+    if df.index.name == "time":
+        df_win = df.loc[window_start:window_end].copy()
+    else:
+        mask = (df["time"] >= window_start) & (df["time"] < run_start)
+        df_win = df[mask].copy()
+    
     
     df_win = df_win.dropna(subset=["by_gsm", "bz_gsm", "speed", "density"])
     

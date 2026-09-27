@@ -21,15 +21,15 @@ def perform_cv(df: pd.DataFrame, features: list[str], target: str, is_prob: bool
     for param in C_or_alpha_list:
         scores = []
         for val_year in range(2015, 2026):
-            # Train: 2005 to val_year - 1
-            train_mask = df['run_date'].apply(lambda d: d.year < val_year)
-            val_mask = df['run_date'].apply(lambda d: d.year == val_year)
+            # Train: 2005 to val_year - 1 using target_date
+            train_mask = df['target_date'].apply(lambda d: d.year < val_year)
+            val_mask = df['target_date'].apply(lambda d: d.year == val_year)
             
             df_train = df[train_mask].dropna(subset=features + [target]).copy()
             df_val = df[val_mask].dropna(subset=features + [target]).copy()
             
             if df_train.empty or df_val.empty:
-                continue
+                raise ValueError(f"Fold for validation year {val_year} is empty!")
                 
             X_train = df_train[features].values
             y_train = df_train[target].values
@@ -62,14 +62,14 @@ def perform_cv(df: pd.DataFrame, features: list[str], target: str, is_prob: bool
     # Now run CV with best_param to capture fold metrics
     fold_metrics = []
     for val_year in range(2015, 2026):
-        train_mask = df['run_date'].apply(lambda d: d.year < val_year)
-        val_mask = df['run_date'].apply(lambda d: d.year == val_year)
+        train_mask = df['target_date'].apply(lambda d: d.year < val_year)
+        val_mask = df['target_date'].apply(lambda d: d.year == val_year)
         
         df_train = df[train_mask].dropna(subset=features + [target]).copy()
         df_val = df[val_mask].dropna(subset=features + [target]).copy()
         
         if df_train.empty or df_val.empty:
-            continue
+            raise ValueError(f"Fold for validation year {val_year} is empty!")
             
         X_train = df_train[features].values
         y_train = df_train[target].values

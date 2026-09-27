@@ -70,7 +70,8 @@ def build_training_dataset(start_year: int = 2005, end_year: int = 2025) -> pd.D
         # Fetch OMNI if needed
         yr = current_date.year
         if yr not in omni_cache:
-            omni_cache[yr] = fetch_omni_historical(yr)
+            df_yr = fetch_omni_historical(yr)
+            omni_cache[yr] = df_yr.set_index("time")
             # clear previous year to save memory
             if yr - 1 in omni_cache:
                 del omni_cache[yr - 1]

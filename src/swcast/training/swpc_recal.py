@@ -61,7 +61,7 @@ def platt_scale_swpc():
         logit_p = np.log(p_clip / (1 - p_clip)).reshape(-1, 1)
         
         # Fit logistic regression on logit(p)
-        lr = LogisticRegression(C=1e9, solver='lbfgs')
+        lr = LogisticRegression(penalty=None, solver='lbfgs')
         lr.fit(logit_p, y)
         
         p_calib = lr.predict_proba(logit_p)[:, 1]
