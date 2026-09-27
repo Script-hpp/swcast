@@ -330,6 +330,13 @@ def compute_k_stats(rows_k: list[dict]) -> dict:
     already substituted by climatology (§5); "kein_lauf" is a descriptive
     label in Ausschlussgrund, not a real exclusion from the paired set.
     """
+    if not rows_k:
+        return {
+            "n": 0, "n_label_gap": 0, "n_swpc_missing": 0,
+            "bss_swcast": float("nan"), "bss_swpc": float("nan"),
+            "delta": (float("nan"), float("nan"), float("nan")), "classification": "zu wenig Daten",
+        }
+
     df = pd.DataFrame(rows_k)
     n_label_gap = int(df["Ausschlussgrund"].str.contains("gfz_luecke").sum())
     n_swpc_missing = int(df["Ausschlussgrund"].str.contains("swpc_fehlt").sum())
@@ -340,7 +347,7 @@ def compute_k_stats(rows_k: list[dict]) -> dict:
         return {
             "n": 0, "n_label_gap": n_label_gap, "n_swpc_missing": n_swpc_missing,
             "bss_swcast": float("nan"), "bss_swpc": float("nan"),
-            "delta": (float("nan"), float("nan"), float("nan")), "classification": "nicht erreicht",
+            "delta": (float("nan"), float("nan"), float("nan")), "classification": "zu wenig Daten",
         }
 
     y = paired["Label"].to_numpy(dtype=float)
@@ -361,11 +368,12 @@ def compute_k_stats(rows_k: list[dict]) -> dict:
         values, day_index, delta_bss, block_length_days=BLOCK_DAYS,
         n_iterations=BOOTSTRAP_ITERATIONS, ci=0.95, seed=BOOTSTRAP_SEED,
     )
+    classification = "zu wenig Daten" if math.isnan(lo) else classify(lo)
 
     return {
         "n": len(paired), "n_label_gap": n_label_gap, "n_swpc_missing": n_swpc_missing,
         "bss_swcast": bss_swcast, "bss_swpc": bss_swpc,
-        "delta": (point, lo, hi), "classification": classify(lo),
+        "delta": (point, lo, hi), "classification": classification,
     }
 
 
@@ -438,6 +446,23 @@ def maybe_write_start_md(rows: list[dict], forecasts_dir: Path) -> Path | None:
         "ersten Vorhersage mit gültigem TSA-Beleg vor der Deadline).\n"
     )
     return start_path
+
+
+def rows_since_start(rows: list[dict], forecasts_dir: Path) -> list[dict]:
+    """
+    Filter rows down to target dates on or after forecasts/START.md's date.
+    Used for the aggregated stats/counts table in live_status.md — not the
+    raw CSV, which keeps the full history for audit purposes.
+
+    Before the run has ever produced a valid forecast (no START.md yet),
+    there is no official evaluation period, so this returns an empty list:
+    stray runs (manual workflow_dispatch tests, etc.) must not pollute the
+    "SWPC fehlt"/"GFZ-Lücke" counts or BSS with pre-start noise.
+    """
+    start_date = _read_start_date(forecasts_dir / "START.md")
+    if start_date is None:
+        return []
+    return [r for r in rows if date.fromisoformat(r["Datum"]) >= start_date]
 
 
 def definitive_label_comparison(rows: list[dict], start_year: int, end_year: int) -> list[dict] | None:
@@ -615,7 +640,8 @@ def main(nowcast_lookback_days: int = 400) -> Path:
     csv_path = write_live_evaluation_csv(rows, reports_dir / "live_evaluation.csv")
     maybe_write_start_md(rows, forecasts_dir)
 
-    stats_by_k = {k: compute_k_stats([r for r in rows if r["k"] == k]) for k in DAY_AHEADS}
+    stats_rows = rows_since_start(rows, forecasts_dir)
+    stats_by_k = {k: compute_k_stats([r for r in stats_rows if r["k"] == k]) for k in DAY_AHEADS}
     drift = compute_input_drift(forecast_paths, artifacts, k=1)
     status_path = write_live_status_md(stats_by_k, forecasts_dir, reports_dir / "live_status.md", drift=drift)
 

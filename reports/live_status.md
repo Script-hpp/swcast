@@ -6,9 +6,9 @@ Noch keine gültige Vorhersage seit Live-Start (kein `forecasts/START.md`).
 
 | Vorlauftag | n (gepaart) | SWPC fehlt | GFZ-Lücke | BSS swcast | BSS SWPC | ΔBSS [95%-KI] | Einordnung |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| +1 | 0 | 1 | 1 | nan | nan | +nan [+nan, +nan] | nicht erreicht |
-| +2 | 0 | 1 | 1 | nan | nan | +nan [+nan, +nan] | nicht erreicht |
-| +3 | 0 | 1 | 1 | nan | nan | +nan [+nan, +nan] | nicht erreicht |
+| +1 | 0 | 0 | 0 | nan | nan | +nan [+nan, +nan] | zu wenig Daten |
+| +2 | 0 | 0 | 0 | nan | nan | +nan [+nan, +nan] | zu wenig Daten |
+| +3 | 0 | 0 | 0 | nan | nan | +nan [+nan, +nan] | zu wenig Daten |
 
 ## Eingangsdrift (nur beschreibend, kein Erfolgskriterium)
 

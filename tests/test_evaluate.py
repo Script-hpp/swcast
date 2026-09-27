@@ -18,6 +18,7 @@ from swcast.evaluate import (
     compute_input_drift,
     compute_k_stats,
     maybe_write_start_md,
+    rows_since_start,
     select_swcast_forecasts,
     write_live_evaluation_csv,
     write_live_status_md,
@@ -283,7 +284,7 @@ def test_compute_k_stats_empty_paired_set_returns_nan_without_crashing():
     stats = compute_k_stats(rows)
     assert stats["n"] == 0
     assert math.isnan(stats["bss_swcast"])
-    assert stats["classification"] == "nicht erreicht"
+    assert stats["classification"] == "zu wenig Daten"
 
 
 def test_write_live_evaluation_csv_has_expected_columns(tmp_path):
@@ -484,3 +485,60 @@ def test_write_live_status_md_omits_drift_section_when_empty(tmp_path):
     stats_by_k = {k: compute_k_stats([_dummy_row(k)]) for k in (1, 2, 3)}
     path = write_live_status_md(stats_by_k, tmp_path, tmp_path / "reports" / "live_status.md", drift={})
     assert "Eingangsdrift" not in path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# compute_k_stats: an empty rows list (e.g. before the run has ever started)
+# must not crash and must report "zu wenig Daten", not "nicht erreicht".
+# ---------------------------------------------------------------------------
+
+def test_compute_k_stats_empty_list_does_not_crash():
+    stats = compute_k_stats([])
+    assert stats["n"] == 0
+    assert math.isnan(stats["bss_swcast"])
+    assert stats["classification"] == "zu wenig Daten"
+
+
+# ---------------------------------------------------------------------------
+# rows_since_start: pre-start rows (before forecasts/START.md's date, or
+# when START.md doesn't exist yet at all) must not enter the stats table.
+# ---------------------------------------------------------------------------
+
+def test_rows_since_start_returns_empty_without_start_md(tmp_path):
+    rows = [{"Datum": "2026-03-01", "k": 1}]
+    assert rows_since_start(rows, tmp_path) == []
+
+
+def test_rows_since_start_filters_out_rows_before_start_date(tmp_path):
+    (tmp_path / "START.md").write_text("2026-03-03\n")
+    rows = [
+        {"Datum": "2026-03-01", "k": 1},  # before start -> excluded
+        {"Datum": "2026-03-03", "k": 1},  # exactly start -> included
+        {"Datum": "2026-03-05", "k": 1},  # after start -> included
+    ]
+    result = rows_since_start(rows, tmp_path)
+    assert {r["Datum"] for r in result} == {"2026-03-03", "2026-03-05"}
+
+
+def test_end_to_end_pre_start_test_run_excluded_from_status_table(tmp_path):
+    """
+    A manual workflow_dispatch test run before 22:00 UTC (so it doesn't even
+    get selected) and before any START.md exists must not show up as
+    "SWPC fehlt"/"GFZ-Lücke" counts in the aggregated stats.
+    """
+    run_day = date(2026, 3, 1)
+    daily_dict = {run_day + timedelta(days=k): {"storm_label": False} for k in (1, 2, 3)}
+    for i in range(1, 366):
+        daily_dict.setdefault(run_day - timedelta(days=i), {"storm_label": False})
+
+    # No forecast attempt at all that day, no SWPC archived -> both excluded
+    rows = build_evaluation_rows({}, {run_day}, [], daily_dict, _artifacts())
+
+    forecasts_dir = tmp_path  # no START.md written
+    stats_rows = rows_since_start(rows, forecasts_dir)
+    stats = compute_k_stats([r for r in stats_rows if r["k"] == 1])
+
+    assert stats["n"] == 0
+    assert stats["n_swpc_missing"] == 0  # not tallied — pre-start, not counted at all
+    assert stats["n_label_gap"] == 0
+    assert stats["classification"] == "zu wenig Daten"

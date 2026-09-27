@@ -171,7 +171,9 @@ def parse_daypre(text: str) -> pd.DataFrame:
 
 LIVE_PRODUCTS = {
     "solar_probabilities.json": f"{SWPC_JSON_BASE}/solar_probabilities.json",
-    "noaa-planetary-k-index-forecast.json": f"{SWPC_JSON_BASE}/noaa-planetary-k-index-forecast.json",
+    # NOT under /json/ — that 404s. Verified: /products/... returns 200 with
+    # a time_tag/kp/observed JSON list.
+    "noaa-planetary-k-index-forecast.json": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json",
     "3-day-solar-geomag-predictions.txt": f"{SWPC_TEXT_BASE}/3-day-solar-geomag-predictions.txt",
     "sgarf.txt": f"{SWPC_TEXT_BASE}/sgarf.txt",
 }
