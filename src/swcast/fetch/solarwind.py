@@ -106,10 +106,16 @@ def fetch_omni_historical(year: int, use_cache: bool = True) -> pd.DataFrame:
         
     asc_name = f"omni_min{year}.asc"
     asc_path = cache_dir / asc_name
-    url = f"{OMNI_MIN_BASE}/{asc_name}"
     
-    logger.info(f"Downloading OMNI data for {year} from {url}")
-    urllib.request.urlretrieve(url, asc_path)
+    # Check if incomplete
+    if asc_path.exists() and asc_path.stat().st_size < 140_000_000:
+        logger.warning(f"Incomplete file found for {year}, deleting {asc_path}")
+        asc_path.unlink()
+        
+    if not asc_path.exists():
+        url = f"{OMNI_MIN_BASE}/{asc_name}"
+        logger.info(f"Downloading OMNI data for {year} from {url}")
+        urllib.request.urlretrieve(url, asc_path)
         
     usecols = [0, 1, 2, 3, 14, 17, 18, 21, 25]
     names = ["year", "doy", "hour", "minute", "bx", "by_gsm", "bz_gsm", "speed", "density"]
