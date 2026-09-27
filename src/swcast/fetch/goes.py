@@ -83,8 +83,11 @@ def fetch_goes_flares(
     """Return the GOES XRS flare list, filtered to [start_date, end_date] and
     to satellites >= min_satellite.
 
-    Columns: time, start_time, end_time, satellite, flare_class, class_letter,
-    class_number, peak_flux_wm2 (xrsb_irrad), active_region.
+    Columns: peak_time, start_time, end_time, satellite, flare_class,
+    class_letter, class_number, peak_flux_wm2 (xrsb_irrad), active_region.
+    `peak_time` is the raw CSV's `time` column, confirmed by inspection to
+    fall strictly between `start_time` and `end_time` (i.e. it is the flare's
+    peak, not its onset).
     """
     raw_path = Path(data_dir) / "raw" / "goes_flares_mission_length.csv"
     _download_raw_csv(raw_path, force=force_download)
@@ -106,7 +109,7 @@ def fetch_goes_flares(
     df[["class_letter", "class_number"]] = df["flare_class"].apply(
         lambda c: pd.Series(_parse_flare_class(c))
     )
-    df = df.rename(columns={"xrsb_irrad": "peak_flux_wm2"})
+    df = df.rename(columns={"xrsb_irrad": "peak_flux_wm2", "time": "peak_time"})
     df = df.drop(columns=["xrsb_irrad_source", "flare_class"])
 
     mask = (

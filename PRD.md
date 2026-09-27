@@ -35,6 +35,18 @@ Beide laufen auf dem Laptop, ohne GPU, mit unter 5 GB Daten.
 | Kp-Referenz | Primär: vorläufiger (nowcast) Kp des GFZ; Kontrolle: endgültiger GFZ-Kp |
 | Ereignis „Sturm" | Kp ≥ 5 (G1 oder stärker) |
 
+**Fenster-Zuordnungsregel (frozen 27.09.2026, vor Nutzung in PREREGISTRATION.md zu übernehmen):**
+Ein Fenster ist positiv für eine Klasse, wenn irgendein Flare mit **Spitzenzeit** (`peak_time`,
+nicht Beginnzeit) innerhalb des Fensters die Klassenschwelle erreicht. Spitzenzeit statt Beginnzeit,
+weil die klassenbestimmende Spitzenflussstärke physikalisch an den Zeitpunkt der Spitze gebunden ist,
+nicht an den Beginn — ein Flare kann in einem Fenster beginnen und im nächsten seine Spitze erreichen.
+Fenster sind halboffen `[window_start, window_end)`: Ein Flare, dessen Spitze exakt auf eine
+Fenstergrenze fällt, gehört zum Fenster, das an diesem Zeitpunkt **beginnt**, nicht zum vorherigen.
+
+**Überlappende Flares:** Keine Sonderbehandlung nötig. Das Fenster-Label ist ein ODER über alle
+Flares mit Spitze im Fenster (`any(peak_flux >= threshold)`), sodass mehrere oder überlappende
+Flares automatisch korrekt in dieselbe Fensterprüfung einfließen, ohne Deduplizierung.
+
 ## 4. Datenquellen
 
 | Daten | Quelle | Nutzung | Status |
@@ -181,7 +193,13 @@ Daten liegen außerhalb des Repositorys unter `DATA_DIR` und werden nur über Sk
 ## 10. Offene Fragen
 
 - Welche Modelle haben lange, lückenlose Reihen (für faire Vergleiche)?
-- Wie behandelt die GOES-Flareliste überlappende Flares und Datenlücken?
+- **Datenlücken-Erkennung (harte Sperre):** Überlappende Flares sind gelöst (Abschnitt 3, ODER-Regel).
+  Echte Datenlücken (fehlende GOES-Telemetrie, nicht "kein Flare") sind es nicht: `labels.py` markiert
+  `is_gap` aktuell als Platzhalter (immer `False`) — eine dokumentierte, bekannte Einschränkung von M0,
+  keine gelöste Frage. Vor dem Einfrieren von `PREREGISTRATION.md` und vor jeder M1-Live-Auswertung
+  muss echte Lückenerkennung stehen (1-Minuten-XRS-Strahlungsmittelwerte, Regel für fehlende/markierte
+  Minuten pro Fenster). Danach ist M0 mit lückenbereinigten Fenstern erneut zu laufen und ein kurzer
+  Sensitivitätsvergleich (ändert sich das Leaderboard-Ranking?) dem Bericht hinzuzufügen.
 - Welche Flareliste ist für die laufende (Live-)Auswertung maßgeblich: NCEI (autoritativ, aber
   verzögert) oder SWPC-Echtzeitliste (sofort, kann von NCEI abweichen)? Für M0 (historisch) ist NCEI
   gesetzt; für M1 laufende Auswertung muss das vorab entschieden werden.
