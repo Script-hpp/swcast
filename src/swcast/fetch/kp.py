@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 from swcast.config import load_config
+from swcast.net import get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def fetch_kp_raw(start: datetime, end: datetime, status: str = "def", use_cache:
             
     url = f"{GFZ_KP_URL}?start={start_str}&end={end_str}&index=Kp&status={status}"
     logger.info(f"Fetching Kp from {url}")
-    resp = requests.get(url, timeout=30)
+    resp = get_with_retry(url, timeout=30)
     resp.raise_for_status()
     data = resp.json()
     

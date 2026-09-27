@@ -22,6 +22,7 @@ def test_fetch_swpc_live_filtering():
     ]
     
     class MockResponse:
+        status_code = 200
         def __init__(self, json_data):
             self._json = json_data
         def json(self): return self._json

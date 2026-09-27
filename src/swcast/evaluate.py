@@ -5,24 +5,28 @@ maßgeblich ist erst N = 365 Tage).
 
 Implementierungsentscheidung: Welche swcast-Vorhersage zählt
 ------------------------------------------------------------
-Für jeden Lauftag D wird unter allen an diesem Tag geschriebenen
-Vorhersage-Dateien (forecast ODER MISSED, jeweils mit `run_start` im
-JSON) NUR der FRÜHESTE Versuch mit `run_start` an Tag D um oder nach
-22:00 UTC berücksichtigt. Jeder spätere Wiederholungslauf desselben
-Tages wird komplett ignoriert – auch dann, wenn er selbst einen
-gültigen TSA-Zeitstempel hätte. Sonst könnte man beliebig oft neu
-starten, bis ein Lauf zufällig gültig wird (§6 Missbrauchsschutz).
+Für jeden Lauftag D zählt die FRÜHESTE ERFOLGREICH ERZEUGTE
+Vorhersage-Datei (Payload enthält `targets`) mit `run_start` an Tag D um
+oder nach 22:00 UTC. Eine MISSED-Datei (kein Vorhersage-JSON entstanden,
+z. B. weil GFZ/SWPC nicht erreichbar waren) verbraucht den Tag NICHT: sie
+ist gar kein Kandidat. Schlägt also der erste Versuch fehl (MISSED) und
+ein Wiederholungslauf desselben Tages gelingt, zählt dieser erfolgreiche
+Lauf — es gibt nach einem Fehlschlag schlicht keine Vorhersage, zwischen
+der man hätte wählen können. Rosinenpicken bleibt trotzdem ausgeschlossen:
+Unter den erfolgreichen Versuchen zählt weiterhin nur der früheste; jeder
+spätere erfolgreiche Wiederholungslauf desselben Tages wird ignoriert,
+auch wenn er selbst einen gültigen TSA-Zeitstempel hätte (§6
+Missbrauchsschutz).
 
 Dieser eine ausgewählte Versuch zählt für Vorlauftag k (1/2/3) als
-GÜLTIG, wenn er ein `p_storm` für k enthält UND sein per
-`freeze.issue_time` geprüfter TSA-Zeitstempel < 00:00 UTC des Zieltags
-D+k liegt (§6). Das wird pro k einzeln geprüft, weil die Frist mit k
-später liegt: ein Lauf kann für k=1 knapp zu spät sein, aber für k=2/3
-noch rechtzeitig. Gibt es für D gar keinen qualifizierenden Versuch,
-oder schlägt die Prüfung für ein bestimmtes k fehl, gilt D für dieses k
-als "verpasst" und wird nach §6/§5 hart durch die Klimatologie-Vorhersage
-ersetzt (der Brier-Score dieses Tages ist dann exakt der der
-Klimatologie).
+GÜLTIG, wenn sein per `freeze.issue_time` geprüfter TSA-Zeitstempel <
+00:00 UTC des Zieltags D+k liegt (§6). Das wird pro k einzeln geprüft,
+weil die Frist mit k später liegt: ein Lauf kann für k=1 knapp zu spät
+sein, aber für k=2/3 noch rechtzeitig. Gibt es für D gar keinen
+erfolgreichen Versuch, oder schlägt die TSA-Prüfung für ein bestimmtes k
+fehl, gilt D für dieses k als "verpasst" und wird nach §6/§5 hart durch
+die Klimatologie-Vorhersage ersetzt (der Brier-Score dieses Tages ist
+dann exakt der der Klimatologie).
 
 SWPC (§8): Für Lauftag D zählt das an D archivierte `daypre`-Produkt
 (3-day-solar-geomag-predictions.txt) nur, wenn sein `issue_time`-Datum
@@ -115,10 +119,21 @@ def select_swcast_forecasts(forecast_json_paths: list[Path], issue_time_fn=issue
     file (forecast AND MISSED; anything else, e.g. START.md, must already
     be filtered out by the caller).
 
-    Returns {D: {"path", "run_start", "payload", "issue_time"}}. `issue_time`
-    is None if the file could not be verified at all (e.g. MISSED files
-    have no .tsr tokens, or both TSAs failed) — such a day is then "missed"
-    for every k, since there is nothing to check a deadline against.
+    A MISSED file (no forecast was produced at all) does NOT consume the
+    day: only files that actually produced a forecast (payload has
+    "targets") are candidates. So if an earlier attempt that day failed
+    (MISSED) but a later retry that day succeeded, the successful one is
+    selected — a failure leaves nothing to have "used up" the day. This
+    still can't be gamed into cherry-picking: among the successful
+    attempts, only the EARLIEST one counts, so any later successful rerun
+    after that first success is ignored regardless of its own timestamp.
+
+    Returns {D: {"path", "run_start", "payload", "issue_time"}} — one entry
+    per run-day D that had at least one successful (>=22:00 UTC) forecast
+    attempt. `issue_time` is None only if that one selected file's TSA
+    tokens could not be verified at all (both TSAs failed) — such a day is
+    then "missed" for every k, since there is nothing to check a deadline
+    against.
     """
     by_day: dict[date, list[tuple[datetime, Path, dict]]] = {}
     for path in forecast_json_paths:
@@ -127,6 +142,8 @@ def select_swcast_forecasts(forecast_json_paths: list[Path], issue_time_fn=issue
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Skipping unreadable forecast file %s: %s", path, exc)
             continue
+        if "targets" not in payload:
+            continue  # a MISSED file: no forecast was produced, doesn't consume the day
         run_start = _parse_run_start(payload)
         if run_start is None or run_start.hour < 22:
             continue  # not a qualifying daily-run attempt
@@ -135,14 +152,12 @@ def select_swcast_forecasts(forecast_json_paths: list[Path], issue_time_fn=issue
     selected: dict[date, dict] = {}
     for d, candidates in by_day.items():
         candidates.sort(key=lambda c: c[0])
-        run_start, path, payload = candidates[0]  # earliest attempt only; later reruns ignored
-        ts = None
-        if "targets" in payload:  # only real forecast files have a TSA-worthy file to check
-            try:
-                ts = issue_time_fn(path)
-            except Exception as exc:
-                logger.warning("issue_time() failed for %s: %s", path, exc)
-                ts = None
+        run_start, path, payload = candidates[0]  # earliest SUCCESSFUL attempt; later ones ignored
+        try:
+            ts = issue_time_fn(path)
+        except Exception as exc:
+            logger.warning("issue_time() failed for %s: %s", path, exc)
+            ts = None
         selected[d] = {"path": path, "run_start": run_start, "payload": payload, "issue_time": ts}
     return selected
 
@@ -547,6 +562,12 @@ def write_live_status_md(
         "# swcast-kp-baseline-v0 – Live-Status",
         "",
         "**Vorläufig – maßgeblich erst bei N = 365 Tagen (PREREGISTRATION §5).**",
+        "",
+        "Auswahlregel je Lauftag (§6): Es zählt die früheste ERFOLGREICH erzeugte "
+        "Vorhersage mit `run_start` ≥ 22:00 UTC und gültigem TSA-Beleg vor der "
+        "Frist. Ein Fehlschlag (MISSED) verbraucht den Tag nicht — ein gelungener "
+        "Wiederholungslauf desselben Tages zählt dann; ein späterer erfolgreicher "
+        "Wiederholungslauf NACH dem ersten Erfolg wird dagegen ignoriert.",
         "",
     ]
     n_days = days_since_start(forecasts_dir)
