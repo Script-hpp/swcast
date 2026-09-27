@@ -113,8 +113,7 @@ für 1998–2024 aus genau diesem FTP-Archiv und eignet sich als externe Kontrol
   Klimatologie und **L1-Sonnenwind**, zusammengeführt über eine einfache Mischung (z. B. gewichtetes Mittel). **Wichtig:** Mischungsgewichte und Rekalibrierung werden *ausschließlich* auf historischen Daten vor dem Einfrieren angepasst.
 - **FR-1.2** Zusätzlich Wahrscheinlichkeit für Kp ≥ 5 je Tag.
 - **FR-1.3** Täglicher Lauf per GitHub Actions zu fester Uhrzeit (UTC, vorab festgelegt).
-- **FR-1.4** Jede Vorhersage wird als JSON-Datei gespeichert, per SHA-256 gehasht und der Hash über
-  OpenTimestamps verankert. Die .ots-Datei wird mit committet.
+- **FR-1.4** Jede Vorhersage wird als JSON-Datei gespeichert und per SHA-256 gehasht. Der Hash wird über zwei unabhängige RFC-3161 TSAs zertifiziert (frühester Beleg = issue_time). Zusätzlich erfolgt eine Langzeitverankerung über OpenTimestamps. Die .tsr- und .ots-Dateien werden mit committet.
 - **FR-1.5** Derselbe Lauf archiviert die aktuellen SWPC-Vorhersagen (Kp und Flares) mit Hash und
   Zeitstempel.
 - **FR-1.6** Auswertungsskript berechnet laufend Scores gegen vorläufigen und endgültigen Kp; verpasste

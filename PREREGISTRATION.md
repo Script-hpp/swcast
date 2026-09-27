@@ -34,7 +34,7 @@ Dieses Dokument friert das Regelwerk und die genaue Definition der Benchmarks (M
 ## 5. Erfolgskriterium (M1)
 **Wichtig:** Das Kriterium für die Modellversion `v0` bezieht sich **ausschließlich** auf die Vorhersage $Kp \ge 5$ für Tag +1/+2/+3. Das Kriterium für Flares (C+, M+) greift erst bei einer zukünftigen Modellversion, die auch Flares vorhersagt (verbunden mit einer eigenen Preregistration).
 
-Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vorlauftag getrennt ausgewertet und berichtet** (es gibt keine zusammengefasste Gesamtaussage). Die Zählung $N = 365$ Tage beginnt ab dem Zieltag +1 der ersten Vorhersage, deren OTS-Beleg gültig vor 00:00 UTC des Zieltags liegt. Das konkrete Datum wird später in einer separaten Log-Datei (z. B. `forecasts/START.md`) dokumentiert, nicht hier.
+Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vorlauftag getrennt ausgewertet und berichtet** (es gibt keine zusammengefasste Gesamtaussage). Die Zählung $N = 365$ Tage beginnt ab dem Zieltag +1 der ersten Vorhersage, deren RFC-3161 TSA-Beleg gültig vor 00:00 UTC des Zieltags liegt. Das konkrete Datum wird später in einer separaten Log-Datei (z. B. `forecasts/START.md`) dokumentiert, nicht hier.
 - Evaluierung der Differenz $\Delta \text{BSS} = \text{BSS}(\text{swcast}) - \text{BSS}(\text{SWPC})$ per 95-%-Block-Bootstrap-KI (27-Tage-Blöcke) im gepaarten Vergleich:
   - Tage, an denen das SWPC-Produkt fehlt, werden aus dem gepaarten $\Delta\text{BSS}$ ausgeschlossen (die Anzahl wird berichtet).
   - Tage ohne `swcast`-Vorhersage erhalten den Brier-Score der Klimatologie.
@@ -46,7 +46,12 @@ Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vo
 ## 6. Betrieb, Datenstand und Issue Time
 - Der tägliche Vorhersagelauf findet vollautomatisch um **22:30 UTC** statt.
 - **Datenstand:** Alle Merkmale (z.B. L1-Mittel über 2h, Kp) beziehen sich auf den tatsächlichen Laufbeginn, da die exakte `issue_time` (Zeitstempel der Registrierung) zum Rechenzeitpunkt noch nicht feststeht. Der Datenstand wird als `inputs_last_data_time` mitgespeichert.
-- **Issue Time:** Maßgeblich für die `issue_time` ist *ausschließlich* der Zeitstempel der OpenTimestamps-Verankerung des Hashes. Liegt dieser OTS-Beleg auf oder nach 00:00 UTC des Zieltags, gilt die Vorhersage als "verpasst" und wird in der Auswertung hart mit der Vorhersage der Klimatologie ersetzt.
+- **Issue Time:** Da OpenTimestamps teils mehrere Stunden für die Bitcoin-Verankerung benötigt, ist für die harte Deadline *ausschließlich* ein RFC-3161 Trusted Timestamp (TSA) maßgeblich. Der SHA-256-Hash der Vorhersagedatei wird in jedem Lauf bei **zwei unabhängigen TSAs** zertifiziert (beide `.tsr`-Tokens werden mitcommittet):
+  1. `https://freetsa.org/tsr`
+  2. `http://timestamp.digicert.com`
+- Die `issue_time` entspricht dem **frühesten gültigen (signaturgeprüften)** TSA-Zeitpunkt aus diesen beiden Diensten.
+- Liegen **beide** validen TSA-Belege auf oder nach 00:00 UTC des Zieltags (oder schlagen beide fehl), gilt die Vorhersage als "verpasst" und wird in der Auswertung hart mit der Vorhersage der Klimatologie ersetzt.
+- OpenTimestamps (.ots) wird weiterhin als zusätzlicher dezentraler Langzeitbeweis mitgeneriert, ist für die Fristüberschreitung jedoch nicht maßgeblich.
 
 ## 7. Modellspezifikation (`swcast-kp-baseline-v0`)
 - **Ziel:** Tägliche Vorhersage des maximalen Kp für Tag +1, +2 und +3 (inkl. Wahrscheinlichkeit $Kp \ge 5$). Es wird ein separates Modell (mit eigenen Gewichten) je Vorlauftag (+1, +2, +3) trainiert.
