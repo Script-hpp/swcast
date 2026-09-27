@@ -30,9 +30,15 @@ def generate_coverage_report():
         # It's cleaner to modify `fetch_historical_rsga` to return stats, but we can't change signature easily without breaking things.
         # Actually, `fetch_historical_rsga` just returns the df. Let's just do a manual loop here to generate exact stats for the report.
         
-        from swcast.fetch.swpc import SWPC_FTP_BASE, _get_cache_dir, parse_rsga
+        from swcast.fetch.swpc import SWPC_FTP_BASE, _get_cache_dir, parse_rsga, fetch_historical_rsga
         import tarfile
         
+        # Ensure all data is downloaded first
+        try:
+            fetch_historical_rsga(2010, 2025)
+        except Exception as e:
+            logger.warning(f"Failed to fetch some RSGA: {e}")
+
         cache_dir = _get_cache_dir()
         for year in range(2010, 2026):
             tar_filename = f"{year}_RSGA.tar.gz"
