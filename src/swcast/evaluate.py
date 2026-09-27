@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -461,7 +462,62 @@ def definitive_label_comparison(rows: list[dict], start_year: int, end_year: int
     return out
 
 
-def write_live_status_md(stats_by_k: dict[int, dict], forecasts_dir: Path, path: Path) -> Path:
+DRIFT_FEATURES = (
+    "persistence", "recurrence", "climatology",
+    "l1_bz_gsm", "l1_by_gsm", "l1_speed", "l1_dyn_pressure", "l1_newell",
+)
+
+
+def compute_input_drift(forecast_json_paths: list[Path], artifacts: dict, k: int = 1) -> dict:
+    """
+    Rein beschreibend (kein Erfolgskriterium, ändert v0 nicht — PREREGISTRATION
+    §9): pro Merkmal des Tag+k-Hauptmodells der Mittelwert über alle bisherigen
+    Live-Läufe mit gültigem L1 gegen `scaler_mean`/`scaler_scale` aus dem
+    Training als z-Wert: z = (Mittelwert_live - scaler_mean) / scaler_scale.
+    Großes |z| heißt, die Live-Eingangsverteilung hat sich vom eingefrorenen
+    Trainings-Scaler entfernt (z. B. weil eine andere rtsw-Sonde mit anderer
+    Kalibrierung aktiv ist, siehe `l1_source`/`l1_density_2h_mean` im JSON).
+
+    Nur Läufe mit gespeichertem `features` UND `l1_valid=True` fließen ein
+    (Rückfall-Läufe haben keine sinnvollen l1_*-Werte).
+    """
+    art = artifacts["models"][str(k)]["p_storm_main"]
+    feature_names = art["features"]
+    per_feature_values: dict[str, list[float]] = {f: [] for f in feature_names}
+
+    for path in forecast_json_paths:
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not payload.get("l1_valid"):
+            continue
+        day_features = payload.get("features", {}).get(str(k))
+        if not day_features:
+            continue
+        for f in feature_names:
+            v = day_features.get(f)
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                per_feature_values[f].append(float(v))
+
+    drift = {}
+    for f, mean_, scale_ in zip(feature_names, art["scaler_mean"], art["scaler_scale"]):
+        vs = per_feature_values[f]
+        if not vs:
+            drift[f] = {"n": 0, "mean_live": float("nan"), "scaler_mean": mean_, "scaler_scale": scale_, "z": float("nan")}
+            continue
+        mean_live = float(np.mean(vs))
+        z = (mean_live - mean_) / scale_ if scale_ else float("nan")
+        drift[f] = {"n": len(vs), "mean_live": mean_live, "scaler_mean": mean_, "scaler_scale": scale_, "z": z}
+    return drift
+
+
+def write_live_status_md(
+    stats_by_k: dict[int, dict],
+    forecasts_dir: Path,
+    path: Path,
+    drift: dict | None = None,
+) -> Path:
     lines = [
         "# swcast-kp-baseline-v0 – Live-Status",
         "",
@@ -487,6 +543,29 @@ def write_live_status_md(stats_by_k: dict[int, dict], forecasts_dir: Path, path:
             f"{s['bss_swcast']:.4f} | {s['bss_swpc']:.4f} | {point:+.4f} [{lo:+.4f}, {hi:+.4f}] | {s['classification']} |"
         )
     lines.append("")
+
+    if drift:
+        lines += [
+            "## Eingangsdrift (nur beschreibend, kein Erfolgskriterium)",
+            "",
+            "Mittelwert der Tag+1-Hauptmodell-Merkmale über alle Live-Läufe mit "
+            "gültigem L1 gegen `scaler_mean`/`scaler_scale` aus dem Training "
+            "(PREREGISTRATION §9: rein beobachtend, ändert `swcast-kp-baseline-v0` "
+            "nicht). Großes |z| kann z. B. auf eine anders kalibrierte aktive "
+            "rtsw-Sonde hindeuten (siehe `l1_source` je Lauf).",
+            "",
+            "| Merkmal | n | Mittelwert live | scaler_mean | scaler_scale | z |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for f in DRIFT_FEATURES:
+            d = drift.get(f)
+            if d is None:
+                continue
+            lines.append(
+                f"| `{f}` | {d['n']} | {d['mean_live']:.4f} | {d['scaler_mean']:.4f} | "
+                f"{d['scaler_scale']:.4f} | {d['z']:+.4f} |"
+            )
+        lines.append("")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines))
@@ -537,7 +616,8 @@ def main(nowcast_lookback_days: int = 400) -> Path:
     maybe_write_start_md(rows, forecasts_dir)
 
     stats_by_k = {k: compute_k_stats([r for r in rows if r["k"] == k]) for k in DAY_AHEADS}
-    status_path = write_live_status_md(stats_by_k, forecasts_dir, reports_dir / "live_status.md")
+    drift = compute_input_drift(forecast_paths, artifacts, k=1)
+    status_path = write_live_status_md(stats_by_k, forecasts_dir, reports_dir / "live_status.md", drift=drift)
 
     logger.info("Wrote %s and %s", csv_path, status_path)
     return status_path

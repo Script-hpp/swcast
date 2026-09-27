@@ -60,6 +60,18 @@ def build_live_features(run_start: datetime) -> dict:
             # set whenever l1_valid is False: the exception type and message
             # from fetching/computing L1 (SWPC rtsw down, timeout, malformed
             # JSON, or FallbackError for <60/120 valid minutes).
+        "l1_source": str | None,
+            # the active rtsw spacecraft over the 2h window (e.g. "SOLAR1"),
+            # None if l1_valid is False. Diagnostic only, not a model input:
+            # different spacecraft can be calibrated differently from each
+            # other and from the OMNI data v0 was trained on.
+        "l1_density_2h_mean": float | None,
+            # raw 2h-mean proton density (cm^-3); None if l1_valid is False.
+            # Not itself a model feature (only l1_dyn_pressure, which folds
+            # density and speed together, is), kept for input-drift checks.
+        "l1_speed_2h_mean": float | None,
+            # same value as days[k]["l1_speed"] (identical for k=1/2/3),
+            # exposed at top level for convenience; None if l1_valid is False.
         "days": {
           1: {"target_date": date, "persistence": float, "recurrence": float,
               "climatology": float, "l1_bz_gsm": float, "l1_by_gsm": float,
@@ -123,6 +135,8 @@ def build_live_features(run_start: datetime) -> dict:
     l1_features = None
     last_l1_time = None
     l1_fallback_reason = None
+    l1_source = None
+    l1_density_2h_mean = None
     try:
         df_l1 = fetch_swpc_live()
         l1_features = compute_2h_features(df_l1, run_start)
@@ -131,11 +145,18 @@ def build_live_features(run_start: datetime) -> dict:
         df_win = df_l1[mask].dropna(subset=["by_gsm", "bz_gsm", "speed", "density"])
         if not df_win.empty:
             last_l1_time = df_win["time"].max().to_pydatetime()
+            l1_density_2h_mean = float(df_win["density"].mean())
+            if "source" in df_win.columns and df_win["source"].notna().any():
+                # Different rtsw spacecraft can be calibrated differently
+                # (e.g. differing density baselines vs. OMNI); recording
+                # which one was active is diagnostic only, not a model input.
+                l1_source = str(df_win["source"].mode().iloc[0])
     except Exception as exc:
         l1_fallback_reason = f"{type(exc).__name__}: {exc}"
         logger.warning("L1 fallback for run_start=%s: %s", run_start, l1_fallback_reason)
 
     l1_valid = l1_features is not None
+    l1_speed_2h_mean = l1_features["speed"] if l1_valid else None
 
     candidate_times = [t for t in (last_kp_time, last_l1_time) if t is not None]
     inputs_last_data_time = max(candidate_times) if candidate_times else None
@@ -164,6 +185,9 @@ def build_live_features(run_start: datetime) -> dict:
         "inputs_last_data_time": inputs_last_data_time,
         "l1_valid": l1_valid,
         "l1_fallback_reason": l1_fallback_reason,
+        "l1_source": l1_source,
+        "l1_density_2h_mean": l1_density_2h_mean,
+        "l1_speed_2h_mean": l1_speed_2h_mean,
         "days": days,
     }
 

@@ -1,0 +1,85 @@
+name: daily-forecast
+
+# PREREGISTRATION.md §6: the run happens at 22:30 UTC. GitHub's cron can run
+# late; a delay of up to ~90 minutes still leaves comfortable room before
+# 00:00 UTC of the target day, and the RFC-3161 TSA deadline (§6) is what
+# actually decides "verpasst" either way, not this schedule.
+on:
+  schedule:
+    - cron: "30 22 * * *"
+  workflow_dispatch: {}
+
+# Never let two runs race each other (e.g. a manual dispatch overlapping the
+# cron): PREREGISTRATION §6's "only the earliest attempt of the day counts"
+# rule assumes runs don't interleave.
+concurrency:
+  group: daily-forecast
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      # Same pinned versions as environment.yml / README.md "Setup".
+      - name: Install dependencies
+        run: |
+          uv pip install --system \
+            "pandas==2.2.*" "numpy==1.26.*" "scipy==1.13.*" "scikit-learn==1.5.*" \
+            "pyarrow==16.*" "requests==2.32.*" "pyyaml==6.0.*" "matplotlib==3.9.*" \
+            "pytest==8.*" "xarray==2024.*" "netcdf4==1.6.*" "opentimestamps-client==0.7.1"
+
+      - name: Tests
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      # Intentionally NOT continue-on-error: a failed forecast must turn the
+      # job red so a human notices. The steps below still run regardless,
+      # via if: always() — the forecast already wrote its own MISSED record
+      # and SWPC archive, and those must reach the repo either way.
+      - name: Daily forecast
+        env:
+          PYTHONPATH: src
+        run: python -m swcast.forecast
+
+      - name: Live evaluation
+        if: always()
+        env:
+          PYTHONPATH: src
+        run: python -m swcast.evaluate
+
+      - name: Upgrade pending OpenTimestamps proofs
+        if: always()
+        run: |
+          find . -name '*.ots' -not -path './.git/*' -print0 \
+            | xargs -0 -r -n1 -I{} sh -c 'ots upgrade "{}" || true'
+
+      - name: Commit and push generated artifacts
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- forecasts archive/swpc reports/live_status.md reports/live_evaluation.csv '*.ots'
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(bot): daily forecast + evaluation $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push origin HEAD:master
+          fi

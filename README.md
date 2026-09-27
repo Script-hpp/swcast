@@ -23,3 +23,12 @@ Konfiguration in `config.yaml` (Datenpfad, Zeiträume, Lauf-Uhrzeit).
 
 Meilenstein 0 (Benchmark) und Meilenstein 1 (Kp-Baseline live) in Arbeit — siehe PRD Abschnitt 9
 für die Aufgabenreihenfolge.
+
+## Live-Status
+
+Der tägliche Lauf (`.github/workflows/daily.yml`, alternativ `scripts/local_daily.sh`) schreibt
+und friert Vorhersagen unter `forecasts/`, archiviert SWPC-Produkte unter `archive/swpc/` und
+wertet fortlaufend aus. Der aktuelle Stand (BSS, ΔBSS mit Konfidenzintervall, Einordnung
+Mithalten/Übertreffen je Vorlauftag, Tage seit Start) steht in
+[reports/live_status.md](reports/live_status.md) — vorläufig, maßgeblich erst ab
+N = 365 Tagen (PREREGISTRATION §5).

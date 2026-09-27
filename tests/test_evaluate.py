@@ -15,10 +15,12 @@ from swcast.evaluate import (
     build_evaluation_rows,
     build_run_day_universe,
     climatology_rate,
+    compute_input_drift,
     compute_k_stats,
     maybe_write_start_md,
     select_swcast_forecasts,
     write_live_evaluation_csv,
+    write_live_status_md,
 )
 
 MODEL_NAME = "swcast-kp-baseline-v0"
@@ -28,7 +30,7 @@ def _iso_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _write_forecast(dir_path: Path, run_start: datetime, model_variant="main") -> Path:
+def _write_forecast(dir_path: Path, run_start: datetime, model_variant="main", features=None) -> Path:
     d = run_start.date()
     targets = [
         {"date": (d + timedelta(days=k)).isoformat(), "kp_max": 3.0 + k, "p_storm": 0.1 * k}
@@ -41,10 +43,15 @@ def _write_forecast(dir_path: Path, run_start: datetime, model_variant="main") -
         "inputs_last_data_time": _iso_z(run_start),
         "l1_valid": model_variant == "main",
         "l1_fallback_reason": None,
+        "l1_source": "SOLAR1" if model_variant == "main" else None,
+        "l1_density_2h_mean": 4.0 if model_variant == "main" else None,
+        "l1_speed_2h_mean": 400.0 if model_variant == "main" else None,
         "artifacts_sha256": "deadbeef",
         "issue_time": "note",
         "targets": targets,
     }
+    if features is not None:
+        payload["features"] = features
     dir_path.mkdir(parents=True, exist_ok=True)
     path = dir_path / f"{MODEL_NAME}.{run_start.strftime('%Y%m%dT%H%M%SZ')}.json"
     path.write_text(json.dumps(payload))
@@ -88,6 +95,25 @@ def _artifacts(use_calib=False) -> dict:
             for k in (1, 2, 3)
         }
     }
+
+
+DRIFT_FEATURE_NAMES = [
+    "persistence", "recurrence", "climatology",
+    "l1_bz_gsm", "l1_by_gsm", "l1_speed", "l1_dyn_pressure", "l1_newell",
+]
+
+
+def _artifacts_with_models() -> dict:
+    art = _artifacts()
+    art["models"] = {
+        str(k): {"p_storm_main": {
+            "features": DRIFT_FEATURE_NAMES,
+            "scaler_mean": [4.0, 3.0, 0.1, -5.0, 1.0, 400.0, 2.0, 3000.0],
+            "scaler_scale": [2.0, 2.0, 0.05, 5.0, 2.0, 100.0, 1.0, 1000.0],
+        }}
+        for k in (1, 2, 3)
+    }
+    return art
 
 
 # ---------------------------------------------------------------------------
@@ -395,3 +421,66 @@ def test_end_to_end_gap_day_between_two_run_days_shows_up_as_missed(tmp_path):
     assert gap_rows[0]["verpasst"] is True
     assert "kein_lauf" in gap_rows[0]["Ausschlussgrund"].split(",")
     assert gap_rows[0]["p_swcast"] == pytest.approx(gap_rows[0]["Klimatologie"])
+
+
+# ---------------------------------------------------------------------------
+# compute_input_drift: descriptive z-score of live feature means vs. the
+# frozen training scaler; never touches v0 itself.
+# ---------------------------------------------------------------------------
+
+def test_compute_input_drift_computes_z_score_from_live_runs(tmp_path):
+    artifacts = _artifacts_with_models()
+    run_start = datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc)
+    features_by_k = {
+        str(k): {
+            "persistence": 6.0, "recurrence": 3.0, "climatology": 0.1,
+            "l1_bz_gsm": -5.0, "l1_by_gsm": 1.0, "l1_speed": 400.0,
+            "l1_dyn_pressure": 2.0, "l1_newell": 3000.0,
+        }
+        for k in (1, 2, 3)
+    }
+    path = _write_forecast(tmp_path, run_start, model_variant="main", features=features_by_k)
+
+    drift = compute_input_drift([path], artifacts, k=1)
+
+    # persistence: mean_live=6.0, scaler_mean=4.0, scaler_scale=2.0 -> z=+1.0
+    assert drift["persistence"]["n"] == 1
+    assert drift["persistence"]["mean_live"] == pytest.approx(6.0)
+    assert drift["persistence"]["z"] == pytest.approx(1.0)
+    # l1_bz_gsm: live == scaler_mean -> z=0
+    assert drift["l1_bz_gsm"]["z"] == pytest.approx(0.0)
+
+
+def test_compute_input_drift_ignores_fallback_runs(tmp_path):
+    artifacts = _artifacts_with_models()
+    run_start = datetime(2026, 3, 1, 22, 0, tzinfo=timezone.utc)
+    path = _write_forecast(tmp_path, run_start, model_variant="fallback")  # l1_valid False, no features
+
+    drift = compute_input_drift([path], artifacts, k=1)
+
+    assert drift["persistence"]["n"] == 0
+    assert math.isnan(drift["persistence"]["z"])
+
+
+def _dummy_row(k: int) -> dict:
+    return {
+        "Datum": "2026-03-02", "k": k, "p_swcast": 0.1, "verpasst": False, "model_variant": "main",
+        "p_swpc": 0.2, "Label": 0.0, "Klimatologie": 0.15, "Ausschlussgrund": "",
+    }
+
+
+def test_write_live_status_md_includes_drift_section_when_given(tmp_path):
+    stats_by_k = {k: compute_k_stats([_dummy_row(k)]) for k in (1, 2, 3)}
+    drift = {
+        "persistence": {"n": 3, "mean_live": 6.0, "scaler_mean": 4.0, "scaler_scale": 2.0, "z": 1.0},
+    }
+    path = write_live_status_md(stats_by_k, tmp_path, tmp_path / "reports" / "live_status.md", drift=drift)
+    text = path.read_text()
+    assert "Eingangsdrift" in text
+    assert "persistence" in text
+
+
+def test_write_live_status_md_omits_drift_section_when_empty(tmp_path):
+    stats_by_k = {k: compute_k_stats([_dummy_row(k)]) for k in (1, 2, 3)}
+    path = write_live_status_md(stats_by_k, tmp_path, tmp_path / "reports" / "live_status.md", drift={})
+    assert "Eingangsdrift" not in path.read_text()

@@ -179,6 +179,19 @@ def main(run_start: datetime | None = None) -> Path | None:
                 "p_storm": predictions[i]["p_storm"],
             })
 
+        # Per-day model input features, plus L1 diagnostics (active spacecraft
+        # + raw 2h density/speed means, not model inputs themselves): kept so
+        # reports/live_status.md can descriptively track input drift against
+        # the frozen v0 training scaler (different rtsw spacecraft can be
+        # calibrated differently from each other and from OMNI).
+        features_payload = {
+            str(k): {f: features["days"][k][f] for f in (
+                "persistence", "recurrence", "climatology",
+                "l1_bz_gsm", "l1_by_gsm", "l1_speed", "l1_dyn_pressure", "l1_newell",
+            )}
+            for k in (1, 2, 3)
+        }
+
         payload = {
             "model": model_name,
             "model_variant": "main" if features["l1_valid"] else "fallback",
@@ -186,6 +199,10 @@ def main(run_start: datetime | None = None) -> Path | None:
             "inputs_last_data_time": _iso_z(features["inputs_last_data_time"]),
             "l1_valid": features["l1_valid"],
             "l1_fallback_reason": features.get("l1_fallback_reason"),
+            "l1_source": features.get("l1_source"),
+            "l1_density_2h_mean": features.get("l1_density_2h_mean"),
+            "l1_speed_2h_mean": features.get("l1_speed_2h_mean"),
+            "features": features_payload,
             "artifacts_sha256": artifacts_sha256,
             "issue_time": "earliest verified RFC-3161 timestamp of this file (PREREGISTRATION §6)",
             "targets": targets,
@@ -275,6 +292,9 @@ def dry_run(run_start: datetime | None = None) -> int:
 
     print(f"l1_valid: {features['l1_valid']}")
     print(f"l1_fallback_reason: {features.get('l1_fallback_reason')}")
+    print(f"l1_source: {features.get('l1_source')}")
+    print(f"l1_density_2h_mean: {features.get('l1_density_2h_mean')}")
+    print(f"l1_speed_2h_mean: {features.get('l1_speed_2h_mean')}")
     print(f"inputs_last_data_time: {_iso_z(features['inputs_last_data_time'])}")
     for k in (1, 2, 3):
         day = features["days"][k]

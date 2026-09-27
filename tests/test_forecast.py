@@ -53,6 +53,9 @@ def _fake_live_features(run_start, l1_valid=True, last_data_time=None):
         "inputs_last_data_time": last_data_time or run_start,
         "l1_valid": l1_valid,
         "l1_fallback_reason": None,
+        "l1_source": "SOLAR1" if l1_valid else None,
+        "l1_density_2h_mean": 4.2 if l1_valid else None,
+        "l1_speed_2h_mean": 400.0 if l1_valid else None,
         "days": days,
     }
 
@@ -170,6 +173,15 @@ def test_main_writes_forecast_json_and_freezes_everything(
         {"date": "2026-01-03", "kp_max": 3.5, "p_storm": 0.2},
         {"date": "2026-01-04", "kp_max": 4.0, "p_storm": 0.3},
     ]
+    assert payload["l1_source"] == "SOLAR1"
+    assert payload["l1_density_2h_mean"] == pytest.approx(4.2)
+    assert payload["l1_speed_2h_mean"] == pytest.approx(400.0)
+    assert payload["features"]["1"] == {
+        "persistence": 4.0, "recurrence": 3.0, "climatology": 0.1,
+        "l1_bz_gsm": -5.0, "l1_by_gsm": 1.0, "l1_speed": 400.0,
+        "l1_dyn_pressure": 2.0, "l1_newell": 3000.0,
+    }
+    assert set(payload["features"]) == {"1", "2", "3"}
 
     # forecast json + both archived files must be frozen
     frozen_paths = {call.args[0] for call in mock_freeze.call_args_list}

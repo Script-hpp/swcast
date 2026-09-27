@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import numpy as np
@@ -309,6 +309,56 @@ def test_inputs_last_data_time_uses_last_valid_l1_minute(mock_nowcast, mock_comp
     # last valid L1 minute (22:20) is later than the persistence interval end
     # (2010-01-01 21:00), so it must win.
     assert live["inputs_last_data_time"] == last_valid_minute
+
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.compute_2h_features")
+@patch("swcast.live_features.fetch_nowcast")
+def test_l1_source_and_raw_density_speed_means_are_exposed(mock_nowcast, mock_compute2h, mock_swpc):
+    """
+    Different rtsw spacecraft can be calibrated differently (e.g. density
+    baseline vs. OMNI); l1_source + the raw 2h density/speed means must be
+    surfaced for diagnostics, separate from the derived model features.
+    """
+    df_kp = _make_shared_kp_df()
+    mock_nowcast.return_value = df_kp
+
+    run_start = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)
+    df_l1 = pd.DataFrame({
+        "time": pd.date_range(run_start - timedelta(hours=2), periods=120, freq="1min", tz=timezone.utc),
+        "by_gsm": [1.0] * 120,
+        "bz_gsm": [-5.0] * 120,
+        "speed": [400.0] * 120,
+        "density": [3.0] * 60 + [5.0] * 60,  # mean = 4.0
+        "source": ["SOLAR1"] * 90 + ["ACE"] * 30,  # mode = SOLAR1
+    })
+    mock_swpc.return_value = df_l1
+    mock_compute2h.return_value = {
+        "bz_gsm": -5.0, "by_gsm": 1.0, "speed": 400.0,
+        "dyn_pressure": 2.0, "newell": 3000.0, "valid_minutes": 120,
+    }
+
+    live = build_live_features(run_start)
+
+    assert live["l1_source"] == "SOLAR1"
+    assert live["l1_density_2h_mean"] == pytest.approx(4.0)
+    assert live["l1_speed_2h_mean"] == pytest.approx(400.0)
+
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.compute_2h_features")
+@patch("swcast.live_features.fetch_nowcast")
+def test_l1_source_and_density_are_none_when_l1_invalid(mock_nowcast, mock_compute2h, mock_swpc):
+    df_kp = _make_shared_kp_df()
+    mock_nowcast.return_value = df_kp
+    mock_swpc.return_value = pd.DataFrame(columns=["time", "by_gsm", "bz_gsm", "speed", "density", "source"])
+    mock_compute2h.side_effect = FallbackError("no L1")
+
+    live = build_live_features(datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc))
+
+    assert live["l1_source"] is None
+    assert live["l1_density_2h_mean"] is None
+    assert live["l1_speed_2h_mean"] is None
 
 
 # ---------------------------------------------------------------------------
