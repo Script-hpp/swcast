@@ -72,3 +72,24 @@ def test_overlapping_flares_in_same_window_do_not_double_count():
         1,
         0,
     )
+
+def test_label_windows_with_gaps():
+    windows = pd.DataFrame({
+        "window_start": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        "window_end": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+    })
+    flares = pd.DataFrame({"peak_time": pd.to_datetime([]), "peak_flux_wm2": []})
+    
+    # 2024-01-01 has 144 minutes missing (exactly 10%) -> is_gap = False
+    # 2024-01-02 has 150 minutes missing (10.4%) -> is_gap = True
+    times = pd.date_range("2024-01-01", "2024-01-03", freq="1min", inclusive="left")
+    gaps_series = pd.Series(False, index=times)
+    
+    # Set 144 minutes on day 1
+    gaps_series.loc["2024-01-01 00:00":"2024-01-01 02:23"] = True
+    
+    # Set 150 minutes on day 2
+    gaps_series.loc["2024-01-02 00:00":"2024-01-02 02:29"] = True
+    
+    labeled = label_windows(windows, flares, gaps=gaps_series, max_gap_fraction=0.1)
+    assert list(labeled["is_gap"]) == [False, True]

@@ -140,7 +140,13 @@ def fetch_goes_1m_gaps(
     """Return a boolean pandas Series (index: time, value: True if data is MISSING or BAD).
 
     Downloads the mission-length 1-minute average science netCDF for the given satellite.
-    Values are considered missing if `xrsb_flux` is NaN or `xrsb_flag` == 2 (bad_data).
+    Values are considered missing if `xrsb_flux` is NaN or `(xrsb_flag & 2) != 0` (bad_data).
+    Note that `xrsb_flag` is a bitmask: good_data(0), eclipse(1), bad_data(2), interpolated(4).
+    Eclipse and interpolated data are NOT treated as gaps because they represent known 
+    temporary obscuration or valid patched data.
+    
+    If the requested end_date is beyond the available data in the NetCDF file, those
+    times will not be in the returned series (labels.py should treat missing rows as gaps).
     """
     import xarray as xr
 
@@ -161,8 +167,9 @@ def fetch_goes_1m_gaps(
     # Subset to time range to save memory
     ds_sub = ds.sel(time=slice(start_ts, end_ts))
     
-    # 2 is bad_data according to flag_meanings
-    is_bad = ds_sub["xrsb_flag"].to_pandas() == 2
+    # xrsb_flag is a bitmask. 2 is bad_data.
+    flag_vals = ds_sub["xrsb_flag"].to_pandas().fillna(0).astype(int)
+    is_bad = (flag_vals & 2) != 0
     is_nan = ds_sub["xrsb_flux"].to_pandas().isna()
     
     # True means it's a gap/missing/bad

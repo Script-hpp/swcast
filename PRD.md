@@ -104,8 +104,7 @@ für 1998–2024 aus genau diesem FTP-Archiv und eignet sich als externe Kontrol
   24 h → 1, sonst 0, geglättet auf z. B. 0,8/0,2), gleitende 27-Tage-Rate.
 - **FR-0.5** Leaderboard je Klasse: Anzahl Vorhersagen, Brier Score, Brier Skill Score gegenüber
   Klimatologie, True Skill Statistic (bei optimaler und bei 50-%-Schwelle), Reliability-Diagramm.
-- **FR-0.6** Vergleich nur auf gemeinsamen Fenstern (Schnittmenge), zusätzlich pro Modell auf allen
-  eigenen Fenstern; Konfidenzintervalle per Block-Bootstrap über Tage (Blocklänge 27 Tage).
+- **FR-0.6** Vergleich jedes Modells auf seinem eigenen nativen Fenster-Raster (Fensterkonvention b). Keine künstliche Umrechnung auf gemeinsame Fenster. Vergleichbarkeit zwischen Modellen entsteht durch den Brier Skill Score (BSS) gegen eine Klimatologie-Baseline, die auf exakt demselben Raster berechnet wird. Konfidenzintervalle per Block-Bootstrap über Tage (Blocklänge 27 Tage).
 - **FR-0.7** Ergebnis als Markdown-Bericht mit Tabellen und Diagrammen im Repository.
 
 ### Meilenstein 1 – Kp-Baseline live
@@ -192,19 +191,11 @@ Daten liegen außerhalb des Repositorys unter `DATA_DIR` und werden nur über Sk
 
 ## 10. Offene Fragen
 
-- Welche Modelle haben lange, lückenlose Reihen (für faire Vergleiche)?
-- **Datenlücken-Erkennung (harte Sperre):** Überlappende Flares sind gelöst (Abschnitt 3, ODER-Regel).
-  Echte Datenlücken (fehlende GOES-Telemetrie, nicht "kein Flare") sind es nicht: `labels.py` markiert
-  `is_gap` aktuell als Platzhalter (immer `False`) — eine dokumentierte, bekannte Einschränkung von M0,
-  keine gelöste Frage. Vor dem Einfrieren von `PREREGISTRATION.md` und vor jeder M1-Live-Auswertung
-  muss echte Lückenerkennung stehen (1-Minuten-XRS-Strahlungsmittelwerte, Regel für fehlende/markierte
-  Minuten pro Fenster). Danach ist M0 mit lückenbereinigten Fenstern erneut zu laufen und ein kurzer
-  Sensitivitätsvergleich (ändert sich das Leaderboard-Ranking?) dem Bericht hinzuzufügen.
-- Welche Flareliste ist für die laufende (Live-)Auswertung maßgeblich: NCEI (autoritativ, aber
-  verzögert) oder SWPC-Echtzeitliste (sofort, kann von NCEI abweichen)? Für M0 (historisch) ist NCEI
-  gesetzt; für M1 laufende Auswertung muss das vorab entschieden werden.
-- Uhrzeit des täglichen Laufs: vor oder nach dem SWPC-Ausgabezeitpunkt (Vergleichbarkeit)?
-- Länge N des späteren Auswertungszeitraums für das Kriterium „mithalten".
+- **Fensterkonvention (Entschieden am 27.09.2026):** Option b – Jedes Modell wird auf seinem eigenen Raster bewertet. Vergleichbarkeit entsteht über den BSS relativ zur auf demselben Raster berechneten Klimatologie. FR-0.6 wurde entsprechend angepasst.
+- **Datenlücken-Erkennung (Entschieden am 27.09.2026):** Eine echte Lücke liegt vor, wenn >10% (144 Minuten) der 1-Minuten-XRS-Mittelwerte eines 24h-Fensters fehlen oder durch Flags als fehlerhaft markiert sind (`(flag & 2) != 0`). Solche Fenster werden von der Auswertung ausgeschlossen.
+- **Flareliste für M1 (Entschieden am 27.09.2026):** NCEI ist maßgeblich für die endgültige Bewertung. SWPC-Echtzeit wird nur vorläufig auf der Statusseite angezeigt (analog zum Kp-Index).
+- **Uhrzeit des täglichen Laufs (Entschieden am 27.09.2026):** 22:30 UTC (cron `30 22 * * *`). Wenn `issue_time >= 00:00 UTC` des Zieltags, gilt die Vorhersage als verpasst → Ersatz durch Klimatologie.
+- **Länge N des Auswertungszeitraums (Entschieden am 27.09.2026):** N = 365 Tage für die harte "Mithalten"-Bewertung. Zwischenstände nach 90 und 180 Tagen sind nur beschreibend.
 
 ## 11. Risiken
 

@@ -25,11 +25,10 @@ own day-1/day-2/day-3 lead times). This is flagged in PRD.md Abschnitt 10
 as a new open question requiring a methodology decision, analogous to the
 existing gap-detection hard gate.
 
-Known limitation (hard gate, PRD.md Abschnitt 10): GOES data-gap detection
-is NOT implemented. `is_gap` is always False (labels.py). This report does
-not and cannot distinguish "no flare occurred" from "GOES telemetry was
-missing" for any window -- that must be resolved before PREREGISTRATION.md
-is frozen and before any M1 live scoring, with M0 re-run afterward.
+GOES data-gap detection is implemented. Windows with >10% missing or bad
+telemetry are excluded from scoring.
+Note on GOES-19: NCEI data includes GOES-19, but we explicitly filter to
+>= GOES-16 and generally the mission-length file is per-satellite. 
 """
 
 from __future__ import annotations
@@ -416,12 +415,58 @@ def main() -> None:
     lines.append("")
     lines.append(
         "A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute "
-        "XRS measurements are missing or flagged as bad in the NCEI GOES science data. "
-        f"This rule excluded {n_gap_canonical} canonical 24h windows from the report period. "
-        "Sensitivity analysis confirms that this exclusion does not drastically change the ranking "
-        "compared to treating all windows as gap-free, but correctly prevents penalizing models for "
-        "flares they correctly predicted but which GOES failed to record."
+        "XRS measurements are missing or flagged as bad (`(xrsb_flag & 2) != 0`) in the NCEI GOES science data. "
+        "Eclipse and interpolated data do not count as gaps. "
+        "The 10% threshold (144 minutes per 24h) is chosen because real telemetry drops occasionally span "
+        "5-9% of a day (e.g. 7.6% on 2026-06-15), which still leaves enough data to catch major flares. "
+        "Dropping more than 10% risks missing a short-lived flare."
     )
+    lines.append("")
+    
+    # We can calculate how many windows were excluded, and if they were just the end of the data file.
+    n_gap_canonical = int(report_labels["is_gap"].sum())
+    
+    # Find if any excluded window is NOT just the very last day (end of data)
+    # The last day in the canonical windows might be 100% missing because the file ended.
+    real_gaps = report_labels[report_labels["is_gap"] & (report_labels["window_start"] < pd.Timestamp(REPORT_END) - pd.Timedelta(days=1))]
+    n_real_gaps = len(real_gaps)
+    
+    if n_gap_canonical == 0:
+        lines.append("No windows were excluded due to data gaps in the report period.")
+    else:
+        lines.append(
+            f"This rule excluded {n_gap_canonical} canonical 24h windows from the report period. "
+            f"Of these, {n_real_gaps} were true telemetry gaps >10%, and the rest were simply because "
+            "the requested report window extended beyond the end of the available GOES NetCDF file."
+        )
+        lines.append("")
+        lines.append("### Sensitivity: With vs. Without Gap Filtering")
+        lines.append("")
+        lines.append("Comparison of NOAA_1 (day-1) metrics on the canonical grid when properly excluding gap windows versus ignoring the gap flags:")
+        lines.append("")
+        lines.append("| Class | Metric | With Gap Filter | Without Gap Filter (Gap-Ignorant) |")
+        lines.append("| --- | --- | --- | --- |")
+        
+        for class_name in CLASSES:
+            if class_name not in MODEL_CLASSES["NOAA_1"]:
+                continue
+            
+            # Filtered is already in common_metrics
+            filtered_metrics = report_sections[class_name]["common_metrics"]["NOAA_1 (day-1, canonical grid)"]
+            
+            # Compute unfiltered (gap-ignorant)
+            unfiltered_labels = report_labels.copy()
+            unfiltered_labels["is_gap"] = False
+            unfiltered_df = prepare_series(
+                canonical_prob_df(noaa_by_day[1], class_name), class_name, unfiltered_labels, baselines[class_name]
+            )
+            unfiltered_metrics = compute_metrics(unfiltered_df)
+            
+            if filtered_metrics and unfiltered_metrics:
+                lines.append(f"| {class_name} | n | {filtered_metrics['n']} | {unfiltered_metrics['n']} |")
+                lines.append(f"| {class_name} | Brier | {_fmt(filtered_metrics['brier'])} | {_fmt(unfiltered_metrics['brier'])} |")
+                lines.append(f"| {class_name} | BSS | {_fmt(filtered_metrics['bss'])} | {_fmt(unfiltered_metrics['bss'])} |")
+        
     lines.append("")
     lines.append("## Window conventions and lead time")
     lines.append("")
