@@ -85,6 +85,23 @@ def _openssl_verify(data_path: Path, tsr_path: Path, cafile: Path,
     return "Verification: OK" in combined
 
 
+def _parse_ts_time_string(raw: str) -> datetime | None:
+    """
+    Parse an openssl "Time stamp:" value into a UTC-aware datetime.
+
+    Some TSAs emit sub-second precision (e.g. "Sep 27 11:24:12.123 2026 GMT").
+    strptime has no fractional-seconds directive for this format, so strip
+    the fraction before parsing rather than silently dropping a valid token.
+    """
+    raw = raw.strip()
+    raw = re.sub(r"(:\d{2})\.\d+", r"\1", raw)
+    try:
+        dt = datetime.strptime(raw, "%b %d %H:%M:%S %Y %Z")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 def _openssl_ts_time(tsr_path: Path) -> datetime | None:
     """
     Extract the timestamp from a .tsr file using openssl ts -reply -text.
@@ -99,12 +116,7 @@ def _openssl_ts_time(tsr_path: Path) -> datetime | None:
     m = re.search(r"Time stamp:\s+(.+)", combined)
     if not m:
         return None
-    raw = m.group(1).strip()
-    try:
-        dt = datetime.strptime(raw, "%b %d %H:%M:%S %Y %Z")
-        return dt.replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
+    return _parse_ts_time_string(m.group(1))
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +171,10 @@ def freeze_file(path: str | Path) -> None:
     tsa_errors: dict[str, str] = {}
 
     for name, url in [("freetsa", FREETSA_URL), ("digicert", DIGICERT_URL)]:
+        out_path = Path(f"{path}.{name}.tsr")
+        out_path.unlink(missing_ok=True)  # drop stale token from a prior partial run
         try:
             raw = _http_post(url, tsq_bytes, "application/timestamp-query")
-            out_path = Path(f"{path}.{name}.tsr")
             out_path.write_bytes(raw)
             tsa_results[name] = raw
             logger.info("TSA %s: token saved to %s", name, out_path)
@@ -174,6 +187,16 @@ def freeze_file(path: str | Path) -> None:
             f"Both TSA requests failed:\n"
             f"  FreeTSA: {tsa_errors.get('freetsa', 'unknown')}\n"
             f"  DigiCert: {tsa_errors.get('digicert', 'unknown')}"
+        )
+
+    # --- Verify at least one token is actually valid ----------------------
+    # A TSA can answer HTTP 200 with a "rejection" PKIStatus; without this
+    # check that would silently look like success.
+    verified = issue_time(path)
+    if verified is None:
+        raise RuntimeError(
+            "No TSA token could be verified as valid "
+            "(HTTP success does not guarantee a granted timestamp)"
         )
 
     # --- OpenTimestamps --------------------------------------------------
