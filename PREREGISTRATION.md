@@ -34,7 +34,7 @@ Dieses Dokument friert das Regelwerk und die genaue Definition der Benchmarks (M
 ## 5. Erfolgskriterium (M1)
 **Wichtig:** Das Kriterium für die Modellversion `v0` bezieht sich **ausschließlich** auf die Vorhersage $Kp \ge 5$ für Tag +1/+2/+3. Das Kriterium für Flares (C+, M+) greift erst bei einer zukünftigen Modellversion, die auch Flares vorhersagt (verbunden mit einer eigenen Preregistration).
 
-Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vorlauftag getrennt ausgewertet und berichtet** (es gibt keine zusammengefasste Gesamtaussage). Die Zählung $N = 365$ Tage beginnt ab der ersten gültigen Live-Vorhersage (Datum wird nach dem ersten Lauf hier dokumentiert).
+Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vorlauftag getrennt ausgewertet und berichtet** (es gibt keine zusammengefasste Gesamtaussage). Die Zählung $N = 365$ Tage beginnt ab dem Zieltag +1 der ersten Vorhersage, deren OTS-Beleg gültig vor 00:00 UTC des Zieltags liegt. Das konkrete Datum wird später in einer separaten Log-Datei (z. B. `forecasts/START.md`) dokumentiert, nicht hier.
 - Evaluierung der Differenz $\Delta \text{BSS} = \text{BSS}(\text{swcast}) - \text{BSS}(\text{SWPC})$ per 95-%-Block-Bootstrap-KI (27-Tage-Blöcke) im gepaarten Vergleich:
   - Tage, an denen das SWPC-Produkt fehlt, werden aus dem gepaarten $\Delta\text{BSS}$ ausgeschlossen (die Anzahl wird berichtet).
   - Tage ohne `swcast`-Vorhersage erhalten den Brier-Score der Klimatologie.
@@ -56,10 +56,9 @@ Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vo
   3. **Klimatologie:** Die Rate für $Kp \ge 5$ in den exakt 365 Tagen bis einschließlich des letzten vollständigen UTC-Tags VOR dem Lauftag.
   4. **L1-Sonnenwind:** Durchschnittswerte über die exakt 2 Stunden vor Laufbeginn für $B_z$ (nT, GSM-Koordinaten), $B_y$ (nT, GSM), $V$ (km/s), dynamischen Druck ($Dichte \times V^2$) und die Newell-Kopplungsfunktion ($V^{4/3} B_T^{2/3} \sin^{8/3}(\theta_c / 2)$). Für Live-L1-Daten im Gegensatz zu OMNI-Daten zur Bugstoßwelle wird bewusst *kein* weiterer Laufzeitversatz zur Erde angesetzt (bei 2-Stunden-Mitteln vertretbar).
 - **Mischungsform & Architektur:** 
-  - Für $p\_storm$ ($P(Kp \ge 5)$): Logistische Regression auf alle oben genannten Merkmale.
-  - Für $kp_{max}$ (deterministisch): Lineare Regression auf dieselben Merkmale.
+  - Für $p\_storm$ ($P(Kp \ge 5)$): Logistische Regression auf alle oben genannten Merkmale. **Regularisierung:** L2 mit Stärke $C \in \{0.01, 0.1, 1, 10\}$ (per Rolling-Origin-CV nach Brier-Score gewählt).
+  - Für $kp_{max}$ (deterministisch): Lineare Regression (Ridge) auf dieselben Merkmale. **Regularisierung:** L2 mit Penalty $\alpha \in \{0.01, 0.1, 1, 10\}$ (per Rolling-Origin-CV nach RMSE gewählt).
   - Alle Merkmale werden anhand der Trainingsdaten standardisiert.
-  - **Regularisierung:** L2-Regularisierung, deren Stärke ($C$) per Rolling-Origin-Cross-Validation über ein Raster (z. B. $C \in \{0.01, 0.1, 1, 10\}$) bestimmt wird.
 - **Trainingszeitraum:** Der finale Endfit nach CV erfolgt auf dem festen Zeitraum von 2005-01-01 bis 2025-12-31, unter Nutzung von OMNI (historischer Sonnenwind) und GFZ (definitive Kp-Daten). 
 - **Validierungsverfahren:** Rolling-Origin-Cross-Validation nach ganzen Kalenderjahren (von 2015 bis 2025). Als Verlustfunktion dient der Brier-Score für $p\_storm$ und der RMSE für $kp_{max}$.
 - **Rückfallregel:** Sollte beim automatischen Lauf um 22:30 UTC irgendein L1-Merkmal fehlen, oder es liegen im 2-Stunden-Fenster weniger als 60 von 120 Minuten gültig vor, fällt das System hart auf ein separates Backup-Modell zurück. Dieses Modell wurde exakt analog trainiert, jedoch *ausschließlich* auf Persistenz, Rekurrenz und Klimatologie (ohne L1-Merkmale).
@@ -71,10 +70,10 @@ Für die Zielgröße Kp $\ge 5$ (Tag +1/+2/+3) wird das Erfolgskriterium **je Vo
   - **Wahrscheinlichkeit ($P(Kp \ge 5)$):**
     - Da SWPC im Produkt `3-day-solar-geomag-predictions.txt` (bzw. dem korrespondierenden FTP-Produkt) keine planetare Sturmwahrscheinlichkeit vorhersagt, wird als Proxy **ausschließlich die Middle Latitude Wahrscheinlichkeit** genutzt, da subaurorale Stationen mittlerer Breite den planetaren Kp besser abbilden als High-Latitude-Stationen (welche Kp systematisch überschätzen würden).
     - $P_{SWPC}(Kp \ge 5) = Prob\_Mid(Minor\_Storm) + Prob\_Mid(Major\_Severe\_Storm)$.
-    - **Fairness-Regel:** Da dieser Proxy nicht exakt das planetare Ereignis abbildet, wird vor der ersten Live-Vorhersage (aber nach dem Einfrieren der Preregistration) *vollautomatisch* eine Rekalibrierung des Mid-Proxys bestimmt: Über eine Platt-Skalierung (logistische Regression auf $logit(p)$) gegen GFZ-definitiv $Kp \ge 5.0$ auf historischen SWPC-Produkten (2010-01-01 bis 2025-12-31) je Tag +1/+2/+3.
+    - **Fairness-Regel:** Da dieser Proxy nicht exakt das planetare Ereignis abbildet, wird vor der ersten Live-Vorhersage (aber nach dem Einfrieren der Preregistration) *vollautomatisch* eine Rekalibrierung des Mid-Proxys bestimmt: Über eine Platt-Skalierung (logistische Regression auf $logit(p)$) gegen GFZ-definitiv $Kp \ge 5.0$ auf historischen SWPC-Produkten (2010-01-01 bis 2025-12-31) je Tag +1/+2/+3. Dabei wird $p$ vor dem Logit fest auf das Intervall $[0.005, 0.995]$ begrenzt.
     - Als finale SWPC-Referenz für das harte Erfolgskriterium gilt diejenige Variante (Rohwert oder rekalibriert), die im historischen Zeitraum den besseren BSS (je Vorlauftag) aufweist. Diese Wahl trifft das Skript ohne jegliche Live-Daten. Die andere Variante wird rein beschreibend berichtet.
   - Maßgeblich ist stets das SWPC-Produkt, das um 22:00 UTC am selben Tag ausgegeben wurde und das wir in unserem Lauf mit archivieren.
-  - Fehlende Werte im SWPC-Produkt werden als Vorhersagelücke gewertet und aus dem $\Delta\text{BSS}$ wie in §5 spezifiziert ausgeschlossen. Die exakte Abbildung der Tage auf +1/+2/+3 aus dem Produkt orientiert sich an den jeweiligen Ausgabedaten des 3-Tage-Vorhersagefensters.
+  - Fehlende Werte im SWPC-Produkt werden als Vorhersagelücke gewertet und aus dem $\Delta\text{BSS}$ wie in §5 spezifiziert ausgeschlossen. Die exakte Abbildung der Tage auf +1/+2/+3 aus dem Produkt ist strikt: Tag +1 entspricht dem ersten UTC-Kalendertag nach dem Ausgabedatum des 22:00-UTC-Produkts (Zieltag), Tag +2 und Tag +3 entsprechend folgend.
 
 ## 9. Versionierungsregel
 - **Unveränderbarkeit:** Nach dem Einfrieren dieses Dokuments wird das Modell `swcast-kp-baseline-v0` niemals aufgrund von Live-Ergebnissen oder im laufenden Betrieb angepasst.
