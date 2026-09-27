@@ -1,0 +1,4 @@
+Datum,k,p_swcast,verpasst,model_variant,p_swpc,Label,Klimatologie,Ausschlussgrund
+2026-09-28,1,0.1589041095890411,True,,,,0.1589041095890411,"kein_lauf,swpc_fehlt,gfz_luecke"
+2026-09-29,2,0.1589041095890411,True,,,,0.1589041095890411,"kein_lauf,swpc_fehlt,gfz_luecke"
+2026-09-30,3,0.1589041095890411,True,,,,0.1589041095890411,"kein_lauf,swpc_fehlt,gfz_luecke"
