@@ -1,0 +1,32 @@
+# swcast configuration
+# DATA_DIR liegt bewusst außerhalb des Repos (siehe PRD Abschnitt 7).
+# Passe den Pfad lokal an; committe hier keine maschinenspezifischen Overrides.
+
+data_dir: "${HOME}/swcast-data"
+
+# Meilenstein 0 – Benchmark
+benchmark:
+  # Zeitraum für den Scoreboard-Download und die GOES-Labels.
+  start_date: "2025-09-27"
+  end_date: "2026-09-27"
+  # Nur GOES-16 und neuer verwenden (siehe PRD Abschnitt 4, Kalibrierungs-Hinweis).
+  min_goes_satellite: 16
+  flare_classes: ["C+", "M+", "X"]
+  # Blocklänge (Tage) für den Block-Bootstrap der Konfidenzintervalle.
+  bootstrap_block_days: 27
+  bootstrap_iterations: 1000
+
+# Meilenstein 1 – Kp-Baseline live
+kp_baseline:
+  model_name: "swcast-kp-baseline-v0"
+  # Uhrzeit des täglichen Laufs (UTC), vor Umsetzung final festlegen (offene Frage, PRD Abschnitt 10).
+  daily_run_utc: "06:00"
+  forecast_horizon_days: [1, 2, 3]
+  storm_threshold_kp: 5
+  persistence_smoothing: [0.8, 0.2]
+  recurrence_window_days: 27
+
+paths:
+  forecasts_dir: "forecasts"
+  archive_swpc_dir: "archive/swpc"
+  reports_dir: "reports"
