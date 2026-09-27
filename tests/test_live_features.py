@@ -10,7 +10,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from swcast.fetch.solarwind import FallbackError
-from swcast.live_features import build_live_features, predict
+from swcast.live_features import MissingFeatureError, build_live_features, predict
 from swcast.training.dataset import build_training_dataset
 from swcast.training.train import train_final_model
 
@@ -199,3 +199,113 @@ def test_build_live_features_l1_fallback(mock_nowcast, mock_compute2h, mock_swpc
         # persistence/climatology/recurrence must still be computed from GFZ nowcast
         assert not math.isnan(day["persistence"])
         assert not math.isnan(day["climatology"])
+
+
+# ---------------------------------------------------------------------------
+# predict(): NaN in a required feature must raise, never silently score NaN
+# ---------------------------------------------------------------------------
+
+def test_predict_raises_missing_feature_error_on_nan_persistence():
+    df = _synthetic_df()
+    art_p = train_final_model(df, FEATURES_MAIN, "target_storm", True, 1.0)
+    art_k = train_final_model(df, FEATURES_MAIN, "target_kp_max", False, 1.0)
+    artifacts = {"models": {"1": {
+        "p_storm_main": art_p, "p_storm_fallback": art_p,
+        "kp_max_main": art_k, "kp_max_fallback": art_k,
+    }}}
+
+    day_feats = {f: float(df.iloc[0][f]) for f in FEATURES_MAIN}
+    day_feats["persistence"] = float("nan")  # e.g. GFZ nowcast outage
+    features = {"l1_valid": True, "days": {1: day_feats}}
+
+    with pytest.raises(MissingFeatureError, match="persistence"):
+        predict(features, artifacts)
+
+
+def test_predict_raises_missing_feature_error_on_nan_recurrence_fallback():
+    df = _synthetic_df()
+    art_p = train_final_model(df, FEATURES_FALLBACK, "target_storm", True, 1.0)
+    art_k = train_final_model(df, FEATURES_FALLBACK, "target_kp_max", False, 1.0)
+    artifacts = {"models": {"3": {
+        "p_storm_main": art_p, "p_storm_fallback": art_p,
+        "kp_max_main": art_k, "kp_max_fallback": art_k,
+    }}}
+
+    day_feats = {f: float(df.iloc[0][f]) for f in FEATURES_FALLBACK}
+    day_feats["recurrence"] = float("nan")
+    features = {"l1_valid": False, "days": {3: day_feats}}
+
+    with pytest.raises(MissingFeatureError, match="recurrence"):
+        predict(features, artifacts)
+
+
+# ---------------------------------------------------------------------------
+# build_live_features(): inputs_last_data_time counts only actually-used data
+# ---------------------------------------------------------------------------
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.compute_2h_features")
+@patch("swcast.live_features.fetch_nowcast")
+def test_inputs_last_data_time_uses_persistence_interval_end_not_partial_interval(
+    mock_nowcast, mock_compute2h, mock_swpc,
+):
+    """
+    The fetched nowcast frame may include a same-day in-progress 3h interval
+    (e.g. 21:00-00:00 with a partial/unconfirmed value) that is NOT among the
+    8 complete persistence intervals. inputs_last_data_time must reflect the
+    end of the latest *used* persistence interval, not that raw max timestamp.
+    """
+    df_kp = _make_shared_kp_df()
+    # run_start = 2010-01-01 22:30 -> latest complete persistence interval is
+    # 2010-01-01 18:00-21:00 (ends 21:00). Plant a value inside the ongoing,
+    # NOT-yet-complete 21:00-00:00 interval, with a later raw timestamp — the
+    # old buggy code (max over the whole fetched frame) would pick this up;
+    # the fix must not, since that interval is excluded from persistence.
+    df_kp = pd.concat([
+        df_kp,
+        pd.DataFrame({
+            "time": [datetime(2010, 1, 1, 22, 0, tzinfo=timezone.utc)],
+            "kp": [7.0],
+            "is_gap": [False],
+        }),
+    ], ignore_index=True)
+    mock_nowcast.return_value = df_kp
+
+    mock_swpc.return_value = pd.DataFrame(columns=["time", "by_gsm", "bz_gsm", "speed", "density"])
+    mock_compute2h.side_effect = FallbackError("no L1")
+
+    run_start = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)
+    live = build_live_features(run_start)
+
+    expected = datetime(2010, 1, 1, 21, 0, tzinfo=timezone.utc)
+    assert live["inputs_last_data_time"] == expected
+
+
+@patch("swcast.live_features.fetch_swpc_live")
+@patch("swcast.live_features.compute_2h_features")
+@patch("swcast.live_features.fetch_nowcast")
+def test_inputs_last_data_time_uses_last_valid_l1_minute(mock_nowcast, mock_compute2h, mock_swpc):
+    df_kp = _make_shared_kp_df()
+    mock_nowcast.return_value = df_kp
+
+    run_start = datetime(2010, 1, 1, 22, 30, tzinfo=timezone.utc)
+    last_valid_minute = datetime(2010, 1, 1, 22, 20, tzinfo=timezone.utc)
+    df_l1 = pd.DataFrame({
+        "time": [datetime(2010, 1, 1, 22, 15, tzinfo=timezone.utc), last_valid_minute,
+                 datetime(2010, 1, 1, 22, 29, tzinfo=timezone.utc)],
+        "by_gsm": [1.0, 1.0, float("nan")],
+        "bz_gsm": [-5.0, -5.0, float("nan")],
+        "speed": [400.0, 400.0, float("nan")],
+        "density": [5.0, 5.0, float("nan")],
+    })
+    mock_swpc.return_value = df_l1
+    mock_compute2h.return_value = {
+        "bz_gsm": -5.0, "by_gsm": 1.0, "speed": 400.0,
+        "dyn_pressure": 2.0, "newell": 3000.0, "valid_minutes": 60,
+    }
+
+    live = build_live_features(run_start)
+
+    # last valid L1 minute (22:20) is later than the persistence interval end
+    # (2010-01-01 21:00), so it must win.
+    assert live["inputs_last_data_time"] == last_valid_minute

@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 L1_FEATURE_KEYS = ["bz_gsm", "by_gsm", "speed", "dyn_pressure", "newell"]
 
 
+class MissingFeatureError(Exception):
+    """
+    Raised by predict() when a required model feature is NaN (e.g. persistence
+    missing because GFZ nowcast failed, or recurrence missing). A NaN input
+    must not silently produce p_storm = NaN: the run counts as not produced,
+    and per PREREGISTRATION §6 the evaluation substitutes climatology for it.
+    """
+
+
 def build_live_features(run_start: datetime) -> dict:
     """
     Build live-run features for run_start, matching PREREGISTRATION §7.
@@ -43,8 +52,9 @@ def build_live_features(run_start: datetime) -> dict:
       {
         "run_start": run_start,
         "inputs_last_data_time": datetime | None,
-            # latest data point actually consumed (max over the latest valid
-            # GFZ-nowcast interval and, if l1_valid, the latest valid L1 minute).
+            # latest data point actually consumed: the end of the latest
+            # used GFZ-nowcast persistence interval, and, if l1_valid, the
+            # latest valid L1 minute in the 2h window (whichever is later).
         "l1_valid": bool,
         "days": {
           1: {"target_date": date, "persistence": float, "recurrence": float,
@@ -67,19 +77,19 @@ def build_live_features(run_start: datetime) -> dict:
     df_daily = daily_storm_label(df_kp)
     daily_kp_dict = df_daily.set_index("date").to_dict("index")
 
-    last_kp_time = None
-    valid_kp_times = df_kp.loc[df_kp["kp"].notna(), "time"]
-    if not valid_kp_times.empty:
-        last_kp_time = valid_kp_times.max().to_pydatetime()
-
     # Persistence: max Kp over the last 8 complete 3h intervals before run_start,
-    # excluding the ongoing interval.
+    # excluding the ongoing interval. inputs_last_data_time for Kp is the END
+    # of the latest of these intervals that actually had data — not the raw
+    # max timestamp in the fetched frame, which could include a same-day
+    # in-progress interval with a partial/unconfirmed nowcast value.
     persistence_intervals = get_persistence_intervals(run_start)
     persistence_kps = []
+    last_kp_time = None
     for dt_start in persistence_intervals:
         val = kp_interval_dict.get(pd.Timestamp(dt_start), np.nan)
         if pd.notna(val):
             persistence_kps.append(val)
+            last_kp_time = dt_start + timedelta(hours=3)
     persistence = max(persistence_kps) if persistence_kps else np.nan
 
     # Climatology: fraction of storm days (Kp >= 5.0) in the 365 days up to
@@ -174,6 +184,11 @@ def predict(features: dict, artifacts: dict) -> dict:
     -------
     dict
         {day: {"p_storm": float, "kp_max": float}} for day in (1, 2, 3).
+
+    Raises
+    ------
+    MissingFeatureError
+        If a feature required by the selected model is NaN for some day.
     """
     l1_valid = features["l1_valid"]
     suffix = "main" if l1_valid else "fallback"
@@ -183,6 +198,13 @@ def predict(features: dict, artifacts: dict) -> dict:
         models = artifacts["models"][str(day)]
         p_art = models[f"p_storm_{suffix}"]
         k_art = models[f"kp_max_{suffix}"]
+
+        needed = sorted(set(p_art["features"]) | set(k_art["features"]))
+        missing = [f for f in needed if not np.isfinite(day_feats.get(f, np.nan))]
+        if missing:
+            raise MissingFeatureError(
+                f"day+{day}: required feature(s) NaN/missing: {missing}"
+            )
 
         x_p = np.array([day_feats[f] for f in p_art["features"]], dtype=float)
         x_k = np.array([day_feats[f] for f in k_art["features"]], dtype=float)
