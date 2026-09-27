@@ -115,7 +115,25 @@ def fetch_omni_historical(year: int, use_cache: bool = True) -> pd.DataFrame:
     if not asc_path.exists():
         url = f"{OMNI_MIN_BASE}/{asc_name}"
         logger.info(f"Downloading OMNI data for {year} from {url}")
-        urllib.request.urlretrieve(url, asc_path)
+        
+        import requests
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with requests.get(url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    with open(asc_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                break
+            except Exception as e:
+                logger.warning(f"Download failed (attempt {attempt+1}/{max_retries}): {e}")
+                if asc_path.exists():
+                    asc_path.unlink()
+                if attempt == max_retries - 1:
+                    raise e
+                time.sleep(5)
         
     usecols = [0, 1, 2, 3, 14, 17, 18, 21, 25]
     names = ["year", "doy", "hour", "minute", "bx", "by_gsm", "bz_gsm", "speed", "density"]
