@@ -11,6 +11,8 @@ dependencies:
   - matplotlib=3.9.*
   - scipy=1.13.*
   - pytest=8.*
+  - xarray=2024.*
+  - netcdf4=1.6.*
   - pip=24.*
   - pip:
       - opentimestamps-client==0.7.1

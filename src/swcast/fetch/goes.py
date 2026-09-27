@@ -118,3 +118,56 @@ def fetch_goes_flares(
         & (df["start_time"] <= pd.Timestamp(end_date, tz="UTC").tz_localize(None))
     )
     return df.loc[mask].sort_values("start_time").reset_index(drop=True)
+
+
+def _find_mission_length_nc_url(session: requests.Session, satellite: int) -> str:
+    url = f"https://data.ngdc.noaa.gov/platforms/solar-space-observing-satellites/goes/goes{satellite}/l2/data/xrsf-l2-avg1m_science/"
+    resp = session.get(url, timeout=30)
+    resp.raise_for_status()
+    matches = re.findall(rf'href="(sci_xrsf-l2-avg1m_g{satellite}_s\d{{8}}_e\d{{8}}_v[\d.\-]+\.nc)"', resp.text)
+    if not matches:
+        raise RuntimeError(f"No mission-length 1m NC found at {url}")
+    return url + sorted(matches)[-1]
+
+
+def fetch_goes_1m_gaps(
+    data_dir: Path,
+    start_date: str,
+    end_date: str,
+    satellite: int = 18,
+    force_download: bool = False,
+) -> pd.Series:
+    """Return a boolean pandas Series (index: time, value: True if data is MISSING or BAD).
+
+    Downloads the mission-length 1-minute average science netCDF for the given satellite.
+    Values are considered missing if `xrsb_flux` is NaN or `xrsb_flag` == 2 (bad_data).
+    """
+    import xarray as xr
+
+    raw_path = Path(data_dir) / "raw" / f"goes{satellite}_xrs_1m_mission_length.nc"
+    if not raw_path.exists() or force_download:
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        with requests.Session() as session:
+            url = _find_mission_length_nc_url(session, satellite)
+            resp = session.get(url, timeout=120)
+            resp.raise_for_status()
+        raw_path.write_bytes(resp.content)
+
+    ds = xr.open_dataset(raw_path)
+    
+    start_ts = pd.Timestamp(start_date, tz="UTC").tz_localize(None)
+    end_ts = pd.Timestamp(end_date, tz="UTC").tz_localize(None)
+
+    # Subset to time range to save memory
+    ds_sub = ds.sel(time=slice(start_ts, end_ts))
+    
+    # 2 is bad_data according to flag_meanings
+    is_bad = ds_sub["xrsb_flag"].to_pandas() == 2
+    is_nan = ds_sub["xrsb_flux"].to_pandas().isna()
+    
+    # True means it's a gap/missing/bad
+    is_gap = is_bad | is_nan
+    
+    ds.close()
+    return is_gap
+

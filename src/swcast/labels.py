@@ -59,6 +59,8 @@ def label_windows(
     windows: pd.DataFrame,
     flares: pd.DataFrame,
     classes: dict[str, float] | None = None,
+    gaps: pd.Series | None = None,
+    max_gap_fraction: float = 0.1,
 ) -> pd.DataFrame:
     """Add one 0/1 column per class in `classes` to `windows`, plus `is_gap`.
 
@@ -66,6 +68,10 @@ def label_windows(
     fetch/goes.py). `windows` must have `window_start`/`window_end` columns
     (see make_windows). See module docstring for the peak-time assignment
     rule and the boundary/overlap conventions.
+
+    If `gaps` is provided (a boolean Series of 1-minute missing/bad data flags 
+    indexed by time, from `fetch_goes_1m_gaps`), `is_gap` will be True for any 
+    window where more than `max_gap_fraction` of the expected minutes are missing.
     """
     classes = classes or CLASS_THRESHOLDS_WM2
     result = windows.copy()
@@ -80,5 +86,24 @@ def label_windows(
             labels.append(int(bool((in_window & above).any())))
         result[class_name] = labels
 
-    result["is_gap"] = False  # placeholder -- see module docstring.
+    if gaps is not None:
+        gap_flags = []
+        for w_start, w_end in zip(result["window_start"], result["window_end"]):
+            # Count how many minutes in this window are marked as True (missing/bad)
+            # The gap series is indexed by time.
+            window_gaps = gaps.loc[w_start:w_end - pd.Timedelta(minutes=1)]
+            expected_minutes = int((w_end - w_start).total_seconds() / 60)
+            if expected_minutes == 0:
+                gap_flags.append(False)
+                continue
+            
+            missing_count = window_gaps.sum()
+            # Also account for missing rows in the series itself
+            missing_count += expected_minutes - len(window_gaps)
+            
+            gap_flags.append(missing_count / expected_minutes > max_gap_fraction)
+        result["is_gap"] = gap_flags
+    else:
+        result["is_gap"] = False  # fallback if no gaps series provided
     return result
+
