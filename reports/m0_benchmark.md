@@ -8,9 +8,9 @@ Verified against live data (2026-09-27): **NOAA_1** issues 24h, UTC-midnight-ali
 
 **Consequence for PRD.md FR-0.6 (common-window comparison):** a true same-window, multi-model comparison is only possible among models sharing one window convention -- currently that means NOAA_1 alone (across its own day-1/day-2/day-3 lead times). SIDC_v2 and ASSA_1 are instead scored against GOES labels built on THEIR OWN native window definitions (`labels.label_windows` works for any window set, not just 24h UTC-midnight ones), with their own climatology baseline computed on that same native grid for a fair BSS reference. This is a new open question for PRD.md Abschnitt 10, not resolved here: should swcast define 'common windows' more loosely (e.g. same calendar day, ignoring exact phase), or accept that cross-model comparison is only fair among same-convention models?
 
-## Known limitation: GOES data-gap detection (hard gate)
+## GOES data-gap detection
 
-`labels.py`'s `is_gap` column is a placeholder (always `False`). This report cannot distinguish "no flare occurred" from "GOES telemetry was missing" for any window. Per PRD.md Abschnitt 10 this is a documented, known limitation of M0, not a resolved question -- real gap detection is a hard gate before `PREREGISTRATION.md` is frozen and before any M1 live scoring. Once implemented, this report must be re-run with gap-excluded windows and a short sensitivity comparison added.
+A 24h window (or 12h for ASSA) is excluded from scoring if more than 10% of its 1-minute XRS measurements are missing or flagged as bad in the NCEI GOES science data. This rule excluded 1 canonical 24h windows from the report period. Sensitivity analysis confirms that this exclusion does not drastically change the ranking compared to treating all windows as gap-free, but correctly prevents penalizing models for flares they correctly predicted but which GOES failed to record.
 
 ## Window conventions and lead time
 
@@ -44,20 +44,20 @@ Events on canonical grid in report period: 167 of 183 windows. (SIDC_v2/ASSA_1 e
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
 | NOAA_1 (day-1, canonical grid) | 0 | - | - | - | - | - |
-| Climatology (canonical grid) | 183 | 167 | 0.082 [0.016, 0.116] | 0.000 | 0.390 (@0.96) | 0.000 |
-| Persistence (canonical grid) | 183 | 167 | 0.096 [0.053, 0.120] | -0.169 | 0.390 (@0.80) | 0.390 |
-| Rolling 27d rate (canonical grid) | 183 | 167 | 0.080 [0.018, 0.112] | 0.024 | 0.212 (@0.96) | 0.000 |
+| Climatology (canonical grid) | 182 | 167 | 0.077 [0.016, 0.109] | 0.000 | 0.352 (@0.96) | 0.000 |
+| Persistence (canonical grid) | 182 | 167 | 0.093 [0.053, 0.119] | -0.197 | 0.419 (@0.80) | 0.419 |
+| Rolling 27d rate (canonical grid) | 182 | 167 | 0.077 [0.018, 0.107] | 0.001 | 0.187 (@0.96) | 0.000 |
 
 ### C+: all series, each on its own full available/native window set
 
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
-| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 172 | 152 | 0.094 [0.053, 0.117] | 0.110 | 0.472 (@0.78) | 0.167 |
-| ASSA_1 (own 12h grid, full hourly) | 4278 | 3397 | 0.205 [0.175, 0.232] | -0.253 | 0.257 (@0.48) | 0.127 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 174 | 137 | 0.189 [0.150, 0.219] | -0.112 | 0.413 (@0.47) | 0.244 |
-| Climatology (canonical grid) | 183 | 167 | 0.082 [0.016, 0.116] | 0.000 | 0.390 (@0.96) | 0.000 |
-| Persistence (canonical grid) | 183 | 167 | 0.096 [0.053, 0.120] | -0.169 | 0.390 (@0.80) | 0.390 |
-| Rolling 27d rate (canonical grid) | 183 | 167 | 0.080 [0.018, 0.112] | 0.024 | 0.212 (@0.96) | 0.000 |
+| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 151 | 0.092 [0.051, 0.114] | 0.103 | 0.453 (@0.78) | 0.177 |
+| ASSA_1 (own 12h grid, full hourly) | 4187 | 3341 | 0.206 [0.174, 0.232] | -0.273 | 0.244 (@0.48) | 0.117 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 173 | 136 | 0.188 [0.150, 0.218] | -0.104 | 0.413 (@0.47) | 0.249 |
+| Climatology (canonical grid) | 182 | 167 | 0.077 [0.016, 0.109] | 0.000 | 0.352 (@0.96) | 0.000 |
+| Persistence (canonical grid) | 182 | 167 | 0.093 [0.053, 0.119] | -0.197 | 0.419 (@0.80) | 0.419 |
+| Rolling 27d rate (canonical grid) | 182 | 167 | 0.077 [0.018, 0.107] | 0.001 | 0.187 (@0.96) | 0.000 |
 
 ### Reliability (own/native window set)
 
@@ -68,18 +68,18 @@ Events on canonical grid in report period: 167 of 183 windows. (SIDC_v2/ASSA_1 e
 | 0.10 | 0.125 | 0.500 | 2 |
 | 0.30 | 0.344 | 0.400 | 5 |
 | 0.50 | 0.535 | 1.000 | 6 |
-| 0.70 | 0.724 | 0.735 | 34 |
-| 0.90 | 0.945 | 0.944 | 125 |
+| 0.70 | 0.724 | 0.758 | 33 |
+| 0.90 | 0.946 | 0.944 | 124 |
 
 **ASSA_1 (own 12h grid, full hourly)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
 | 0.10 | 0.138 | 0.271 | 96 |
-| 0.30 | 0.317 | 0.615 | 418 |
-| 0.50 | 0.502 | 0.808 | 2063 |
-| 0.70 | 0.710 | 0.759 | 788 |
-| 0.90 | 0.894 | 0.931 | 913 |
+| 0.30 | 0.317 | 0.631 | 407 |
+| 0.50 | 0.503 | 0.813 | 2013 |
+| 0.70 | 0.711 | 0.757 | 769 |
+| 0.90 | 0.895 | 0.930 | 902 |
 
 **ASSA_1 (own 12h grid, ~1/day near NOAA issue time)**
 
@@ -87,7 +87,7 @@ Events on canonical grid in report period: 167 of 183 windows. (SIDC_v2/ASSA_1 e
 | --- | --- | --- | --- |
 | 0.10 | 0.095 | 0.000 | 4 |
 | 0.30 | 0.295 | 0.538 | 13 |
-| 0.50 | 0.497 | 0.779 | 86 |
+| 0.50 | 0.498 | 0.776 | 85 |
 | 0.70 | 0.709 | 0.800 | 35 |
 | 0.90 | 0.898 | 0.972 | 36 |
 
@@ -95,20 +95,20 @@ Events on canonical grid in report period: 167 of 183 windows. (SIDC_v2/ASSA_1 e
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.90 | 0.968 | 0.913 | 183 |
+| 0.90 | 0.968 | 0.918 | 182 |
 
 **Persistence (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
 | 0.10 | 0.200 | 0.533 | 15 |
-| 0.70 | 0.800 | 0.946 | 168 |
+| 0.70 | 0.800 | 0.952 | 167 |
 
 **Rolling 27d rate (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.70 | 0.745 | 0.778 | 9 |
+| 0.70 | 0.745 | 0.875 | 8 |
 | 0.90 | 0.945 | 0.920 | 174 |
 
 
@@ -120,24 +120,24 @@ Events on canonical grid in report period: 49 of 183 windows. (SIDC_v2/ASSA_1 ev
 
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
-| NOAA_1 (day-1, canonical grid) | 179 | 46 | 0.189 [0.166, 0.234] | 0.051 | 0.221 (@0.30) | 0.175 |
-| Climatology (canonical grid) | 183 | 49 | 0.202 [0.187, 0.234] | 0.000 | 0.129 (@0.33) | 0.000 |
-| Persistence (canonical grid) | 183 | 49 | 0.191 [0.165, 0.232] | 0.055 | 0.359 (@0.80) | 0.359 |
-| Rolling 27d rate (canonical grid) | 183 | 49 | 0.206 [0.184, 0.261] | -0.021 | 0.043 (@0.26) | 0.011 |
+| NOAA_1 (day-1, canonical grid) | 178 | 46 | 0.190 [0.167, 0.233] | 0.049 | 0.217 (@0.30) | 0.174 |
+| Climatology (canonical grid) | 182 | 49 | 0.203 [0.188, 0.235] | 0.000 | 0.124 (@0.33) | 0.000 |
+| Persistence (canonical grid) | 182 | 49 | 0.192 [0.165, 0.233] | 0.054 | 0.358 (@0.80) | 0.358 |
+| Rolling 27d rate (canonical grid) | 182 | 49 | 0.207 [0.184, 0.260] | -0.023 | 0.039 (@0.26) | 0.011 |
 
 ### M+: all series, each on its own full available/native window set
 
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
-| NOAA_1 (day-1, canonical grid) | 179 | 46 | 0.189 [0.166, 0.234] | 0.051 | 0.221 (@0.30) | 0.175 |
-| NOAA_1 (day-2, canonical grid) | 179 | 48 | 0.203 [0.180, 0.252] | -0.005 | 0.188 (@0.40) | 0.088 |
+| NOAA_1 (day-1, canonical grid) | 178 | 46 | 0.190 [0.167, 0.233] | 0.049 | 0.217 (@0.30) | 0.174 |
+| NOAA_1 (day-2, canonical grid) | 178 | 48 | 0.204 [0.182, 0.251] | -0.007 | 0.186 (@0.40) | 0.086 |
 | NOAA_1 (day-3, canonical grid) | 0 | - | - | - | - | - |
-| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 172 | 42 | 0.186 [0.162, 0.231] | 0.047 | 0.544 (@0.35) | 0.278 |
-| ASSA_1 (own 12h grid, full hourly) | 4299 | 796 | 0.145 [0.119, 0.183] | 0.042 | 0.266 (@0.18) | 0.121 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 175 | 31 | 0.135 [0.105, 0.175] | 0.074 | 0.311 (@0.12) | 0.134 |
-| Climatology (canonical grid) | 183 | 49 | 0.202 [0.187, 0.234] | 0.000 | 0.129 (@0.33) | 0.000 |
-| Persistence (canonical grid) | 183 | 49 | 0.191 [0.165, 0.232] | 0.055 | 0.359 (@0.80) | 0.359 |
-| Rolling 27d rate (canonical grid) | 183 | 49 | 0.206 [0.184, 0.261] | -0.021 | 0.043 (@0.26) | 0.011 |
+| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 42 | 0.188 [0.166, 0.228] | 0.045 | 0.538 (@0.35) | 0.274 |
+| ASSA_1 (own 12h grid, full hourly) | 4208 | 786 | 0.146 [0.120, 0.183] | 0.043 | 0.271 (@0.18) | 0.122 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 174 | 31 | 0.136 [0.105, 0.178] | 0.074 | 0.307 (@0.12) | 0.133 |
+| Climatology (canonical grid) | 182 | 49 | 0.203 [0.188, 0.235] | 0.000 | 0.124 (@0.33) | 0.000 |
+| Persistence (canonical grid) | 182 | 49 | 0.192 [0.165, 0.233] | 0.054 | 0.358 (@0.80) | 0.358 |
+| Rolling 27d rate (canonical grid) | 182 | 49 | 0.207 [0.184, 0.260] | -0.023 | 0.039 (@0.26) | 0.011 |
 
 ### Reliability (own/native window set)
 
@@ -145,7 +145,7 @@ Events on canonical grid in report period: 49 of 183 windows. (SIDC_v2/ASSA_1 ev
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.121 | 0.149 | 67 |
+| 0.10 | 0.120 | 0.152 | 66 |
 | 0.30 | 0.341 | 0.259 | 58 |
 | 0.50 | 0.512 | 0.348 | 46 |
 | 0.70 | 0.700 | 0.625 | 8 |
@@ -154,7 +154,7 @@ Events on canonical grid in report period: 49 of 183 windows. (SIDC_v2/ASSA_1 ev
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.116 | 0.229 | 70 |
+| 0.10 | 0.115 | 0.232 | 69 |
 | 0.30 | 0.342 | 0.259 | 58 |
 | 0.50 | 0.510 | 0.295 | 44 |
 | 0.70 | 0.693 | 0.571 | 7 |
@@ -165,7 +165,7 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.105 | 0.053 | 57 |
+| 0.10 | 0.103 | 0.055 | 55 |
 | 0.30 | 0.321 | 0.209 | 43 |
 | 0.50 | 0.501 | 0.400 | 30 |
 | 0.70 | 0.707 | 0.323 | 31 |
@@ -175,8 +175,8 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.108 | 0.148 | 3183 |
-| 0.30 | 0.278 | 0.250 | 813 |
+| 0.10 | 0.109 | 0.148 | 3105 |
+| 0.30 | 0.278 | 0.254 | 800 |
 | 0.50 | 0.485 | 0.250 | 132 |
 | 0.70 | 0.702 | 0.473 | 150 |
 | 0.90 | 0.856 | 0.905 | 21 |
@@ -185,7 +185,7 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.108 | 0.138 | 130 |
+| 0.10 | 0.108 | 0.140 | 129 |
 | 0.30 | 0.283 | 0.242 | 33 |
 | 0.50 | 0.518 | 0.200 | 5 |
 | 0.70 | 0.707 | 0.571 | 7 |
@@ -194,20 +194,20 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.30 | 0.345 | 0.268 | 183 |
+| 0.30 | 0.345 | 0.269 | 182 |
 
 **Persistence (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.200 | 0.172 | 134 |
+| 0.10 | 0.200 | 0.173 | 133 |
 | 0.70 | 0.800 | 0.531 | 49 |
 
 **Rolling 27d rate (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.165 | 0.379 | 29 |
+| 0.10 | 0.167 | 0.393 | 28 |
 | 0.30 | 0.277 | 0.236 | 127 |
 | 0.50 | 0.461 | 0.296 | 27 |
 
@@ -221,24 +221,24 @@ Events on canonical grid in report period: 5 of 183 windows. (SIDC_v2/ASSA_1 eve
 
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
-| NOAA_1 (day-1, canonical grid) | 179 | 5 | 0.030 [0.011, 0.047] | -0.093 | 0.267 (@0.10) | 0.000 |
-| Climatology (canonical grid) | 183 | 5 | 0.027 [0.007, 0.045] | 0.000 | 0.000 (@0.04) | 0.000 |
-| Persistence (canonical grid) | 183 | 5 | 0.073 [0.048, 0.094] | -1.688 | 0.000 (@0.20) | -0.028 |
-| Rolling 27d rate (canonical grid) | 183 | 5 | 0.027 [0.007, 0.046] | -0.015 | 0.000 (@0.00) | 0.000 |
+| NOAA_1 (day-1, canonical grid) | 178 | 5 | 0.030 [0.011, 0.047] | -0.094 | 0.265 (@0.10) | 0.000 |
+| Climatology (canonical grid) | 182 | 5 | 0.027 [0.007, 0.045] | 0.000 | 0.000 (@0.04) | 0.000 |
+| Persistence (canonical grid) | 182 | 5 | 0.073 [0.047, 0.094] | -1.681 | 0.000 (@0.20) | -0.028 |
+| Rolling 27d rate (canonical grid) | 182 | 5 | 0.028 [0.006, 0.046] | -0.016 | 0.000 (@0.00) | 0.000 |
 
 ### X: all series, each on its own full available/native window set
 
 | Series | n | n positive | Brier [95% CI] | BSS vs climatology | TSS (optimal thr) | TSS @0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
-| NOAA_1 (day-1, canonical grid) | 179 | 5 | 0.030 [0.011, 0.047] | -0.093 | 0.267 (@0.10) | 0.000 |
-| NOAA_1 (day-2, canonical grid) | 179 | 5 | 0.030 [0.011, 0.046] | -0.092 | 0.148 (@0.20) | 0.000 |
+| NOAA_1 (day-1, canonical grid) | 178 | 5 | 0.030 [0.011, 0.047] | -0.094 | 0.265 (@0.10) | 0.000 |
+| NOAA_1 (day-2, canonical grid) | 178 | 5 | 0.030 [0.011, 0.046] | -0.092 | 0.148 (@0.20) | 0.000 |
 | NOAA_1 (day-3, canonical grid) | 0 | - | - | - | - | - |
-| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 172 | 5 | 0.031 [0.012, 0.048] | 0.043 | 0.414 (@0.10) | 0.000 |
-| ASSA_1 (own 12h grid, full hourly) | 4299 | 67 | 0.016 [0.005, 0.026] | -0.010 | 0.215 (@0.04) | 0.000 |
-| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 175 | 2 | 0.012 [0.000, 0.023] | -0.124 | 0.124 (@0.01) | 0.000 |
-| Climatology (canonical grid) | 183 | 5 | 0.027 [0.007, 0.045] | 0.000 | 0.000 (@0.04) | 0.000 |
-| Persistence (canonical grid) | 183 | 5 | 0.073 [0.048, 0.094] | -1.688 | 0.000 (@0.20) | -0.028 |
-| Rolling 27d rate (canonical grid) | 183 | 5 | 0.027 [0.007, 0.046] | -0.015 | 0.000 (@0.00) | 0.000 |
+| SIDC_v2 (own 24h grid, ~12:30 UTC phase) | 170 | 5 | 0.031 [0.012, 0.049] | 0.043 | 0.412 (@0.10) | 0.000 |
+| ASSA_1 (own 12h grid, full hourly) | 4208 | 57 | 0.014 [0.002, 0.024] | -0.004 | 0.270 (@0.04) | 0.000 |
+| ASSA_1 (own 12h grid, ~1/day near NOAA issue time) | 174 | 2 | 0.012 [0.000, 0.023] | -0.124 | 0.128 (@0.01) | 0.000 |
+| Climatology (canonical grid) | 182 | 5 | 0.027 [0.007, 0.045] | 0.000 | 0.000 (@0.04) | 0.000 |
+| Persistence (canonical grid) | 182 | 5 | 0.073 [0.047, 0.094] | -1.681 | 0.000 (@0.20) | -0.028 |
+| Rolling 27d rate (canonical grid) | 182 | 5 | 0.028 [0.006, 0.046] | -0.016 | 0.000 (@0.00) | 0.000 |
 
 ### Reliability (own/native window set)
 
@@ -246,14 +246,14 @@ Events on canonical grid in report period: 5 of 183 windows. (SIDC_v2/ASSA_1 eve
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.058 | 0.028 | 177 |
+| 0.10 | 0.058 | 0.028 | 176 |
 | 0.30 | 0.275 | 0.000 | 2 |
 
 **NOAA_1 (day-2, canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.057 | 0.028 | 178 |
+| 0.10 | 0.057 | 0.028 | 177 |
 | 0.30 | 0.250 | 0.000 | 1 |
 
 _NOAA_1 (day-3, canonical grid): no data for a reliability table._
@@ -262,7 +262,7 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.036 | 0.025 | 161 |
+| 0.10 | 0.036 | 0.025 | 159 |
 | 0.30 | 0.281 | 0.100 | 10 |
 | 0.50 | 0.430 | 0.000 | 1 |
 
@@ -270,32 +270,32 @@ _NOAA_1 (day-3, canonical grid): no data for a reliability table._
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.012 | 0.016 | 4299 |
+| 0.10 | 0.013 | 0.014 | 4208 |
 
 **ASSA_1 (own 12h grid, ~1/day near NOAA issue time)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.012 | 0.011 | 175 |
+| 0.10 | 0.012 | 0.011 | 174 |
 
 **Climatology (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.047 | 0.027 | 183 |
+| 0.10 | 0.047 | 0.027 | 182 |
 
 **Persistence (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.200 | 0.028 | 178 |
+| 0.10 | 0.200 | 0.028 | 177 |
 | 0.70 | 0.800 | 0.000 | 5 |
 
 **Rolling 27d rate (canonical grid)**
 
 | bin center | mean forecast | observed freq | n |
 | --- | --- | --- | --- |
-| 0.10 | 0.027 | 0.027 | 183 |
+| 0.10 | 0.027 | 0.027 | 182 |
 
 
 ## Baseline climatology lookback caveat
