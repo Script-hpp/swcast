@@ -1,0 +1,62 @@
+{
+  "model": "swcast-kp-baseline-v0",
+  "model_variant": "main",
+  "run_start": "2026-10-03T01:16:53.528764Z",
+  "inputs_last_data_time": "2026-10-03T01:11:00Z",
+  "l1_valid": true,
+  "l1_fallback_reason": null,
+  "l1_source": "SOLAR1",
+  "l1_density_2h_mean": 2.822347826086956,
+  "l1_speed_2h_mean": 274.795652173913,
+  "features": {
+    "1": {
+      "persistence": 1.667,
+      "recurrence": 4.667,
+      "climatology": 0.14794520547945206,
+      "l1_bz_gsm": -0.3464347826086957,
+      "l1_by_gsm": -2.9919130434782613,
+      "l1_speed": 274.795652173913,
+      "l1_dyn_pressure": 213185.6823017391,
+      "l1_newell": 1717.2088137221288
+    },
+    "2": {
+      "persistence": 1.667,
+      "recurrence": 5.0,
+      "climatology": 0.14794520547945206,
+      "l1_bz_gsm": -0.3464347826086957,
+      "l1_by_gsm": -2.9919130434782613,
+      "l1_speed": 274.795652173913,
+      "l1_dyn_pressure": 213185.6823017391,
+      "l1_newell": 1717.2088137221288
+    },
+    "3": {
+      "persistence": 1.667,
+      "recurrence": 3.333,
+      "climatology": 0.14794520547945206,
+      "l1_bz_gsm": -0.3464347826086957,
+      "l1_by_gsm": -2.9919130434782613,
+      "l1_speed": 274.795652173913,
+      "l1_dyn_pressure": 213185.6823017391,
+      "l1_newell": 1717.2088137221288
+    }
+  },
+  "artifacts_sha256": "41fecf0d96c3b799c24ce8cf0ec467976008cc2acf46b800eb5f9b89b4586e40",
+  "issue_time": "earliest verified RFC-3161 timestamp of this file (PREREGISTRATION \u00a76)",
+  "targets": [
+    {
+      "date": "2026-10-04",
+      "kp_max": 2.4404408424884574,
+      "p_storm": 0.05802786523364114
+    },
+    {
+      "date": "2026-10-05",
+      "kp_max": 3.4447918196829095,
+      "p_storm": 0.23515787524254755
+    },
+    {
+      "date": "2026-10-06",
+      "kp_max": 3.2966166827723686,
+      "p_storm": 0.16083258931166589
+    }
+  ]
+}
