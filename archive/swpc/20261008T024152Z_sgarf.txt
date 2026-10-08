@@ -1,0 +1,52 @@
+:Product: Report of Solar-Geophysical Activity
+:Issued: 2026 Oct 07 2200 UTC
+# Prepared jointly by the U.S. Dept. of Commerce, NOAA,
+# Space Weather Prediction Center and the U.S. Air Force.
+#
+Joint USAF/NOAA Solar Geophysical Activity Report and Forecast
+SDF Number 280 Issued at 2200Z on 07 Oct 2026
+
+IA.  Analysis of Solar Active Regions and Activity from 06/2100Z to
+07/2100Z: Solar activity has been at low levels for the past 24 hours.
+There are currently 5 numbered sunspot regions on the disk.
+IB.  Solar Activity Forecast: Solar activity is expected to be low with
+a chance for M-class flares on days one, two, and three (08 Oct, 09 Oct,
+10 Oct).
+
+IIA.  Geophysical Activity Summary 06/2100Z to 07/2100Z: The geomagnetic
+field has been at quiet to unsettled levels for the past 24 hours. 
+Solar wind speed reached a peak of 429 km/s at 06/2110Z. Total field was
+under 5 nT and the Bz component reached -4 nT at 07/1701 UTC. Electrons
+greater than 2 MeV at geosynchronous orbit reached a peak level of 11911
+pfu.
+IIB.  Geophysical Activity Forecast: The geomagnetic field is expected
+to be at quiet levels on day one (08 Oct), quiet to major storm levels
+on day two (09 Oct) and quiet to active levels on day three (10 Oct).
+Protons have a slight chance of crossing threshold on days one, two, and
+three (08 Oct, 09 Oct, 10 Oct).
+
+III.  Event probabilities 08 Oct-10 Oct
+Class M    40/40/40
+Class X    05/05/05
+Proton     10/10/10
+PCAF       green
+
+IV.  Penticton 10.7 cm Flux
+Observed           07 Oct 114
+Predicted   08 Oct-10 Oct 115/115/116
+90 Day Mean        07 Oct 114
+
+V.  Geomagnetic A Indices
+Observed Afr/Ap 06 Oct  008/011
+Estimated Afr/Ap 07 Oct  005/006
+Predicted Afr/Ap 08 Oct-10 Oct  005/005-019/030-013/015
+
+VI.  Geomagnetic Activity Probabilities 08 Oct-10 Oct
+A.  Middle Latitudes
+Active                10/45/30
+Minor Storm           01/20/05
+Major-severe storm    01/05/01
+B.  High Latitudes
+Active                15/15/15
+Minor Storm           15/20/20
+Major-severe storm    15/40/30
