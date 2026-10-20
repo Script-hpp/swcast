@@ -1,0 +1,62 @@
+{
+  "model": "swcast-kp-baseline-v0",
+  "model_variant": "fallback",
+  "run_start": "2026-10-20T01:48:30.911122Z",
+  "inputs_last_data_time": "2026-10-20T00:00:00Z",
+  "l1_valid": false,
+  "l1_fallback_reason": "ValueError: Duplicate timestamps found in live SWPC wind data after filtering for active=True.",
+  "l1_source": null,
+  "l1_density_2h_mean": null,
+  "l1_speed_2h_mean": null,
+  "features": {
+    "1": {
+      "persistence": 0.667,
+      "recurrence": 4.0,
+      "climatology": 0.14520547945205478,
+      "l1_bz_gsm": NaN,
+      "l1_by_gsm": NaN,
+      "l1_speed": NaN,
+      "l1_dyn_pressure": NaN,
+      "l1_newell": NaN
+    },
+    "2": {
+      "persistence": 0.667,
+      "recurrence": 4.0,
+      "climatology": 0.14520547945205478,
+      "l1_bz_gsm": NaN,
+      "l1_by_gsm": NaN,
+      "l1_speed": NaN,
+      "l1_dyn_pressure": NaN,
+      "l1_newell": NaN
+    },
+    "3": {
+      "persistence": 0.667,
+      "recurrence": 3.333,
+      "climatology": 0.14520547945205478,
+      "l1_bz_gsm": NaN,
+      "l1_by_gsm": NaN,
+      "l1_speed": NaN,
+      "l1_dyn_pressure": NaN,
+      "l1_newell": NaN
+    }
+  },
+  "artifacts_sha256": "41fecf0d96c3b799c24ce8cf0ec467976008cc2acf46b800eb5f9b89b4586e40",
+  "issue_time": "earliest verified RFC-3161 timestamp of this file (PREREGISTRATION \u00a76)",
+  "targets": [
+    {
+      "date": "2026-10-21",
+      "kp_max": 2.439202759022448,
+      "p_storm": 0.04444245284407018
+    },
+    {
+      "date": "2026-10-22",
+      "kp_max": 3.1744023091309326,
+      "p_storm": 0.15365650871051
+    },
+    {
+      "date": "2026-10-23",
+      "kp_max": 3.1906496029070466,
+      "p_storm": 0.12942771724516938
+    }
+  ]
+}
