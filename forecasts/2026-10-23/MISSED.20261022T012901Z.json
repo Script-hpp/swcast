@@ -1,0 +1,6 @@
+{
+  "model": "swcast-kp-baseline-v0",
+  "run_start": "2026-10-22T01:29:01.060302Z",
+  "error_type": "ConnectTimeout",
+  "reason": "HTTPSConnectionPool(host='kp.gfz.de', port=443): Max retries exceeded with url: /app/json/?start=2025-10-21T01:29:01Z&end=2026-10-22T01:29:01Z&index=Kp&status=now (Caused by ConnectTimeoutError(<HTTPSConnection(host='kp.gfz.de', port=443) at 0x7f787476d5b0>, 'Connection to kp.gfz.de timed out. (connect timeout=30)'))"
+}
