@@ -1,0 +1,65 @@
+:Product: 3-day Space Weather Predictions daypre.txt
+:Issued: 2026 Oct 24 2200 UTC
+# Prepared by the US Dept. of Commerce, NOAA, Space Weather Prediction Center
+# Product description and SWPC contact on the Web
+# http://www.swpc.noaa.gov/wwire.html
+#
+#             3-day Space Weather Predictions
+#
+:Prediction_dates:   2026 Oct 25   2026 Oct 26   2026 Oct 27
+:Geomagnetic_A_indices:
+A_Fredericksburg         14             8             6
+A_Planetary              18             8             5
+#
+# Predicted 3-hour Middle latitude k-indices
+:Pred_Mid_k:
+Mid/00-03UT               2             3             2
+Mid/03-06UT               3             2             1
+Mid/06-09UT               3             2             2
+Mid/09-12UT               3             2             1
+Mid/12-15UT               3             2             2
+Mid/15-18UT               3             2             1
+Mid/18-21UT               3             2             2
+Mid/21-00UT               3             2             2
+#
+# Predicted 3-hour High latitude k-indices
+:Pred_High_k:
+High/00-03UT              1             2             1
+High/03-06UT              2             2             1
+High/06-09UT              4             2             1
+High/09-12UT              5             3             2
+High/12-15UT              6             3             2
+High/15-18UT              4             2             1
+High/18-21UT              3             2             1
+High/21-00UT              2             1             1
+#
+# Probability of Geomagnetic conditions at Middle Latitude
+:Prob_Mid:
+Mid/Active               25            20            10
+Mid/Minor_Storm          15             5             1
+Mid/Major-Severe_Storm    5             1             1
+#
+# Probability of Geomagnetic conditions at High Latitudes
+:Prob_High:
+High/Active              15            20            15
+High/Minor_Storm         25            30            20
+High/Major-Severe_Storm  35            25            10
+#
+# Polar Cap Absorption Forecast
+:Polar_cap:
+                      green
+#
+# Solar
+:10cm_flux:
+                         92            92            88
+#
+:Whole_Disk_Flare_Prob:
+Class_M                  10            10            10
+Class_X                   1             1             1
+Proton                    1             1             1
+#
+# Region Flare Probabilities for 2026 Oct 25
+# Region     Class C      M             X             P
+:Reg_Prob: 2026 Oct 24
+  4557          0         0             0             0
+  4560         60        10             1             1
