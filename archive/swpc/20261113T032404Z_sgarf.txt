@@ -1,0 +1,50 @@
+:Product: Report of Solar-Geophysical Activity
+:Issued: 2026 Nov 12 2200 UTC
+# Prepared jointly by the U.S. Dept. of Commerce, NOAA,
+# Space Weather Prediction Center and the U.S. Air Force.
+#
+Joint USAF/NOAA Solar Geophysical Activity Report and Forecast
+SDF Number 316 Issued at 2200Z on 12 Nov 2026
+
+IA.  Analysis of Solar Active Regions and Activity from 11/2100Z to
+12/2100Z: Solar activity has been at moderate levels for the past 24
+hours. There are currently 7 numbered sunspot regions on the disk.
+IB.  Solar Activity Forecast: Solar activity is expected to be low with
+a chance for M-class flares on days one, two, and three (13 Nov, 14 Nov,
+15 Nov).
+
+IIA.  Geophysical Activity Summary 11/2100Z to 12/2100Z: The geomagnetic
+field has been at quiet levels for the past 24 hours. Solar wind speed
+reached a peak of 508 km/s at 12/0051Z. Total IMF reached 6 nT at
+12/0226Z. The maximum southward component of Bz reached -3 nT at
+12/0204Z. Electrons greater than 2 MeV at geosynchronous orbit reached a
+peak level of 3235 pfu.
+IIB.  Geophysical Activity Forecast: The geomagnetic field is expected
+to be at quiet levels on days one, two, and three (13 Nov, 14 Nov, 15
+Nov).
+
+III.  Event probabilities 13 Nov-15 Nov
+Class M    35/35/35
+Class X    05/05/05
+Proton     05/05/05
+PCAF       green
+
+IV.  Penticton 10.7 cm Flux
+Observed           12 Nov 116
+Predicted   13 Nov-15 Nov 115/110/105
+90 Day Mean        12 Nov 112
+
+V.  Geomagnetic A Indices
+Observed Afr/Ap 11 Nov  004/006
+Estimated Afr/Ap 12 Nov  005/004
+Predicted Afr/Ap 13 Nov-15 Nov  005/005-006/005-006/005
+
+VI.  Geomagnetic Activity Probabilities 13 Nov-15 Nov
+A.  Middle Latitudes
+Active                05/10/10
+Minor Storm           05/01/01
+Major-severe storm    01/01/01
+B.  High Latitudes
+Active                15/15/15
+Minor Storm           15/15/15
+Major-severe storm    15/10/10
